@@ -1,0 +1,24 @@
+"""Typer CLI entry point for ed-bot."""
+
+import pathlib
+import typer
+
+from ed_bot.cli.ingest import app as ingest_app
+from ed_bot.cli.status import app as status_app
+from ed_bot.cli.review import app as review_app
+from ed_bot.cli.answer import app as answer_app
+from ed_bot.cli.guardrails_cmd import app as guardrails_app
+
+app = typer.Typer(name="ed", help="EdStem forum automation.")
+
+app.add_typer(ingest_app, name="ingest")
+app.add_typer(status_app, name="status")
+app.add_typer(review_app, name="review")
+app.add_typer(answer_app, name="answer")
+app.add_typer(guardrails_app, name="guardrails")
+
+DEFAULT_BOT_DIR = "~/.ed-bot"
+
+
+def get_bot_dir(bot_dir: str = DEFAULT_BOT_DIR) -> pathlib.Path:
+    return pathlib.Path(bot_dir).expanduser()
