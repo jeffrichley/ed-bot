@@ -62,6 +62,14 @@ class BotConfig:
         return pathlib.Path(self.data_dir) / "lectures"
 
     @property
+    def canvas_pages_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.data_dir) / "canvas-pages"
+
+    @property
+    def canvas_announcements_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.data_dir) / "canvas-announcements"
+
+    @property
     def guardrails_dir(self) -> pathlib.Path:
         return pathlib.Path(self.playbook_dir) / "guardrails"
 
