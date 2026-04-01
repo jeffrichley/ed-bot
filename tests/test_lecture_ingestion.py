@@ -70,13 +70,16 @@ class TestLectureIngester:
                 ("00:00:00", "Welcome to the first lesson."),
                 ("00:03:42", "Now let's talk about pandas."),
             ],
-            screenshots=[
-                ("00:00:15", "screenshot-0001.png"),
-            ],
             slug="lesson-01-reading-data",
+            lesson_id=5001,
+            slide_id=9002,
+            slide_title="Reading Stock Data",
         )
         assert "lecture:" in md
         assert "# Lesson 01: Reading Data" in md
         assert "[00:00:00]" in md
         assert "Welcome to the first lesson" in md
-        assert "screenshot-0001.png" in md
+        assert "lesson_id: 5001" in md
+        assert "slide_id: 9002" in md
+        assert "edstem_url:" in md
+        assert "video_file:" in md

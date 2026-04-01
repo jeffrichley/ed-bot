@@ -54,11 +54,7 @@ class LectureIngester:
         # Step 3: Get video duration
         duration = self._get_duration(video_path)
 
-        # Step 4: Extract screenshots at scene changes
-        console.print("[bold]Extracting screenshots...[/bold]")
-        screenshots = self._extract_screenshots(video_path, screenshot_dir)
-
-        # Step 5: Transcribe
+        # Step 4: Transcribe
         if srt_path.exists():
             console.print("[bold]Using existing subtitles[/bold]")
             segments = self._parse_srt(srt_path)
@@ -67,15 +63,15 @@ class LectureIngester:
             if not self._extract_audio(video_path, audio_path):
                 return 0
             segments = self._transcribe(audio_path)
+            audio_path.unlink(missing_ok=True)
 
-        # Step 6: Generate markdown
+        # Step 5: Generate markdown (no pre-extracted screenshots — frames pulled on demand)
         md_content = self._generate_markdown(
             title=lesson_title,
             course_id=course_id,
             video_url=video_url,
             duration=duration,
             segments=segments,
-            screenshots=screenshots,
             slug=slug,
             lesson_id=lesson_id,
             slide_id=slide_id,
@@ -86,10 +82,6 @@ class LectureIngester:
         md_path = output_dir / f"{slug}.md"
         md_path.write_text(md_content, encoding="utf-8")
         console.print(f"[green]Saved:[/green] {md_path}")
-
-        # Clean up video and audio (keep screenshots)
-        video_path.unlink(missing_ok=True)
-        audio_path.unlink(missing_ok=True)
 
         return 1
 
@@ -142,40 +134,6 @@ class LectureIngester:
             return str(timedelta(seconds=int(seconds)))
         except Exception:
             return "unknown"
-
-    def _extract_screenshots(
-        self, video_path: pathlib.Path, output_dir: pathlib.Path
-    ) -> list[tuple[str, str]]:
-        """Extract screenshots at scene changes. Returns list of (timestamp, filename)."""
-        if not shutil.which("ffmpeg"):
-            console.print("[yellow]ffmpeg not found, skipping screenshots[/yellow]")
-            return []
-        try:
-            # Scene detection with threshold
-            subprocess.run(
-                ["ffmpeg", "-i", str(video_path), "-vf",
-                 "select='gt(scene,0.3)',showinfo", "-vsync", "vfr",
-                 str(output_dir / "screenshot-%04d.png"),
-                 "-y", "-loglevel", "quiet"],
-                capture_output=True, text=True, timeout=300,
-            )
-            # Also extract at regular intervals as fallback (every 60 seconds)
-            subprocess.run(
-                ["ffmpeg", "-i", str(video_path), "-vf", "fps=1/60",
-                 str(output_dir / "interval-%04d.png"),
-                 "-y", "-loglevel", "quiet"],
-                capture_output=True, text=True, timeout=300,
-            )
-        except Exception as e:
-            console.print(f"[yellow]Screenshot extraction failed: {e}[/yellow]")
-
-        screenshots = []
-        for png in sorted(output_dir.glob("*.png")):
-            # Extract timestamp from filename or use index
-            idx = len(screenshots)
-            timestamp = _format_timestamp(idx * 60)  # approximate
-            screenshots.append((timestamp, png.name))
-        return screenshots
 
     def _extract_audio(self, video_path: pathlib.Path, audio_path: pathlib.Path) -> bool:
         """Extract audio from video via ffmpeg."""
@@ -241,14 +199,18 @@ class LectureIngester:
         video_url: str,
         duration: str,
         segments: list[tuple[str, str]],
-        screenshots: list[tuple[str, str]],
         slug: str,
         lesson_id: int | None = None,
         slide_id: int | None = None,
         slide_title: str | None = None,
         region: str = "us",
     ) -> str:
-        """Generate timestamped markdown from transcript and screenshots."""
+        """Generate timestamped markdown from transcript.
+
+        No pre-extracted screenshots — frames are pulled on demand via
+        extract_frame() when the drafter references a specific timestamp.
+        The video file is stored at ./{slug}/video.mp4 for this purpose.
+        """
         from datetime import datetime, timezone
 
         # Build EdStem deep link
@@ -266,6 +228,7 @@ slide_id: {slide_id or 'null'}
 slide_title: "{slide_title or ''}"
 duration: "{duration}"
 video_url: "{video_url}"
+video_file: "{slug}/video.mp4"
 edstem_url: "{edstem_url}"
 transcribed: {datetime.now(timezone.utc).isoformat()}
 ---"""
@@ -274,17 +237,8 @@ transcribed: {datetime.now(timezone.utc).isoformat()}
         if edstem_url:
             body += f"\n> Watch on EdStem: [{title}]({edstem_url})\n"
 
-        # Insert screenshots alongside transcript segments
-        screenshot_iter = iter(screenshots)
-        current_screenshot = next(screenshot_iter, None)
-
         for timestamp, text in segments:
             body += f"\n## [{timestamp}]\n\n{text}\n"
-
-            # Insert screenshot if we have one near this timestamp
-            if current_screenshot:
-                body += f"\n![Slide at {timestamp}](./{slug}/{current_screenshot[1]})\n"
-                current_screenshot = next(screenshot_iter, None)
 
         return frontmatter + body
 
@@ -332,3 +286,46 @@ def _merge_segments(
         merged.append((current_ts, " ".join(current_text)))
 
     return merged
+
+
+def extract_frame(video_path: pathlib.Path, timestamp: str, output_path: pathlib.Path) -> bool:
+    """Extract a single frame from a video at a specific timestamp.
+
+    Args:
+        video_path: Path to the video file
+        timestamp: Timestamp in HH:MM:SS format
+        output_path: Where to save the PNG
+
+    Returns True on success, False on failure.
+    Used by the drafter to pull frames on demand when referencing lectures.
+    """
+    if not shutil.which("ffmpeg"):
+        return False
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-ss", timestamp, "-i", str(video_path),
+             "-frames:v", "1", "-q:v", "2", str(output_path),
+             "-y", "-loglevel", "quiet"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0 and output_path.exists()
+    except Exception:
+        return False
+
+
+def find_video_for_lecture(lectures_dir: pathlib.Path, slug: str) -> pathlib.Path | None:
+    """Find the stored video file for a lecture by its slug.
+
+    Returns the video path or None if not found.
+    """
+    video_path = lectures_dir / slug / "video.mp4"
+    if video_path.exists():
+        return video_path
+    # Try finding any video file in the slug directory
+    slug_dir = lectures_dir / slug
+    if slug_dir.exists():
+        for ext in ("*.mp4", "*.mkv", "*.webm"):
+            videos = list(slug_dir.glob(ext))
+            if videos:
+                return videos[0]
+    return None
