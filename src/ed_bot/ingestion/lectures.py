@@ -31,16 +31,24 @@ class LectureIngester:
         region: str = "us",
         output_name: str | None = None,
     ) -> int:
-        """Ingest a single video. Returns 1 on success, 0 on failure."""
+        """Ingest a single video. Returns 1 on success, 0 on failure.
+
+        Skips if the markdown file already exists (use force=True to re-ingest).
+        """
         slug = output_name or _slugify(lesson_title)
         output_dir = self.config.lectures_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        screenshot_dir = output_dir / slug
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        md_path = output_dir / f"{slug}.md"
+        if md_path.exists():
+            console.print(f"[dim]Skipping (already exists): {lesson_title}[/dim]")
+            return 0
 
-        video_path = screenshot_dir / "video.mp4"
-        audio_path = screenshot_dir / "audio.wav"
+        video_dir = output_dir / slug
+        video_dir.mkdir(parents=True, exist_ok=True)
+
+        video_path = video_dir / "video.mp4"
+        audio_path = video_dir / "audio.wav"
 
         # Step 1: Download video
         console.print(f"[bold]Downloading:[/bold] {lesson_title}")
@@ -48,7 +56,7 @@ class LectureIngester:
             return 0
 
         # Step 2: Check for existing subtitles (SRT)
-        srt_path = screenshot_dir / "subtitles.srt"
+        srt_path = video_dir / "subtitles.srt"
         self._download_subtitles(video_url, srt_path)
 
         # Step 3: Get video duration
