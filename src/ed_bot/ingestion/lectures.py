@@ -93,6 +93,7 @@ class LectureIngester:
             console.print("[red]yt-dlp not installed. Add it with: uv add yt-dlp[/red]")
             return False
         try:
+            download_url = _kaltura_to_direct_url(url)
             ydl_opts = {
                 "outtmpl": str(output_path),
                 "noplaylist": True,
@@ -101,7 +102,7 @@ class LectureIngester:
                 "format": "best[ext=mp4]/best",
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+                ydl.download([download_url])
             # yt-dlp may add extension, find the actual file
             if output_path.exists():
                 return True
@@ -121,6 +122,7 @@ class LectureIngester:
         except ImportError:
             return False
         try:
+            download_url = _kaltura_to_direct_url(url)
             ydl_opts = {
                 "outtmpl": str(output_path.with_suffix("")),
                 "skip_download": True,
@@ -132,7 +134,7 @@ class LectureIngester:
                 "no_warnings": True,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+                ydl.download([download_url])
             # yt-dlp adds language suffix, find the file
             for srt in output_path.parent.glob("*.srt"):
                 if srt != output_path:
@@ -263,6 +265,36 @@ transcribed: {datetime.now(timezone.utc).isoformat()}
             body += f"\n## [{timestamp}]\n\n{text}\n"
 
         return frontmatter + body
+
+
+def _kaltura_to_direct_url(url: str) -> str:
+    """Convert a Kaltura embed URL to a direct download URL.
+
+    Kaltura embed URLs look like:
+        https://cdnapisec.kaltura.com/p/2019031/embedPlaykitJs/uiconf_id/45182411?...&entry_id=1_abc123
+
+    Direct download URLs look like:
+        https://cdnapisec.kaltura.com/p/2019031/sp/201903100/playManifest/entryId/1_abc123/format/download/protocol/https
+    """
+    # Extract entry_id from query params
+    entry_match = re.search(r"entry_id=([^&]+)", url)
+    if not entry_match:
+        return url  # not a Kaltura embed URL, return as-is
+
+    entry_id = entry_match.group(1)
+
+    # Extract partner ID from path
+    partner_match = re.search(r"/p/(\d+)/", url)
+    if not partner_match:
+        return url
+
+    partner_id = partner_match.group(1)
+    sp_id = f"{partner_id}00"
+
+    return (
+        f"https://cdnapisec.kaltura.com/p/{partner_id}/sp/{sp_id}"
+        f"/playManifest/entryId/{entry_id}/format/download/protocol/https"
+    )
 
 
 def _slugify(text: str) -> str:
