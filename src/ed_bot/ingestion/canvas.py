@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 
 import httpx
+from dotenv import find_dotenv, load_dotenv
 from markdownify import markdownify as html_to_md
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn
@@ -20,6 +21,9 @@ class CanvasIngester:
 
     def __init__(self, config: BotConfig):
         self.config = config
+        # Load .env: try cwd first, then bot_dir, then home
+        load_dotenv(find_dotenv(usecwd=True))
+        load_dotenv(config.bot_dir / ".env", override=False)
         self._token = os.environ.get("CANVAS_API_TOKEN")
         self._base_url = os.environ.get("CANVAS_BASE_URL", "https://gatech.instructure.com")
         if not self._token:
