@@ -435,6 +435,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "ed-api" },
+    { name = "faster-whisper" },
     { name = "markitdown" },
     { name = "pyqmd" },
     { name = "pyyaml" },
@@ -462,6 +463,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "ed-api", editable = "../ed-api" },
+    { name = "faster-whisper", specifier = ">=1.0.0" },
     { name = "faster-whisper", marker = "extra == 'lectures'", specifier = ">=1.0.0" },
     { name = "markitdown", specifier = ">=0.1.0" },
     { name = "pyqmd", editable = "../py-qmd" },
