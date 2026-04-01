@@ -125,6 +125,10 @@ def lectures(
             video_url=slide.video_url,
             lesson_title=f"{lesson_obj.title} - {slide.title}",
             course_id=cid,
+            lesson_id=lesson_obj.id,
+            slide_id=slide.id,
+            slide_title=slide.title,
+            region=config.region,
         )
         total += count
 

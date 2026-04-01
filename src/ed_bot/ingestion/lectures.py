@@ -25,6 +25,10 @@ class LectureIngester:
         video_url: str,
         lesson_title: str,
         course_id: int,
+        lesson_id: int | None = None,
+        slide_id: int | None = None,
+        slide_title: str | None = None,
+        region: str = "us",
         output_name: str | None = None,
     ) -> int:
         """Ingest a single video. Returns 1 on success, 0 on failure."""
@@ -73,6 +77,10 @@ class LectureIngester:
             segments=segments,
             screenshots=screenshots,
             slug=slug,
+            lesson_id=lesson_id,
+            slide_id=slide_id,
+            slide_title=slide_title,
+            region=region,
         )
 
         md_path = output_dir / f"{slug}.md"
@@ -235,19 +243,36 @@ class LectureIngester:
         segments: list[tuple[str, str]],
         screenshots: list[tuple[str, str]],
         slug: str,
+        lesson_id: int | None = None,
+        slide_id: int | None = None,
+        slide_title: str | None = None,
+        region: str = "us",
     ) -> str:
         """Generate timestamped markdown from transcript and screenshots."""
         from datetime import datetime, timezone
 
+        # Build EdStem deep link
+        edstem_url = ""
+        if lesson_id:
+            edstem_url = f"https://edstem.org/{region}/courses/{course_id}/lessons/{lesson_id}"
+            if slide_id:
+                edstem_url += f"/slides/{slide_id}"
+
         frontmatter = f"""---
 lecture: "{title}"
 course_id: {course_id}
+lesson_id: {lesson_id or 'null'}
+slide_id: {slide_id or 'null'}
+slide_title: "{slide_title or ''}"
 duration: "{duration}"
 video_url: "{video_url}"
+edstem_url: "{edstem_url}"
 transcribed: {datetime.now(timezone.utc).isoformat()}
 ---"""
 
         body = f"\n\n# {title}\n"
+        if edstem_url:
+            body += f"\n> Watch on EdStem: [{title}]({edstem_url})\n"
 
         # Insert screenshots alongside transcript segments
         screenshot_iter = iter(screenshots)
@@ -258,7 +283,7 @@ transcribed: {datetime.now(timezone.utc).isoformat()}
 
             # Insert screenshot if we have one near this timestamp
             if current_screenshot:
-                body += f"\n![Slide](./{slug}/{current_screenshot[1]})\n"
+                body += f"\n![Slide at {timestamp}](./{slug}/{current_screenshot[1]})\n"
                 current_screenshot = next(screenshot_iter, None)
 
         return frontmatter + body
