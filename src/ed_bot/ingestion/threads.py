@@ -19,15 +19,29 @@ class ThreadIngester:
         self.config = config
         self.client = ed_client
 
-    def ingest(self, course_id: int, semester: str) -> int:
-        """Ingest all threads for a course/semester. Returns count of threads ingested."""
+    def ingest(self, course_id: int, semester: str, force: bool = False) -> int:
+        """Ingest threads for a course/semester. Returns count of threads ingested.
+
+        Only fetches threads updated since the last sync unless force=True.
+        """
         output_dir = self.config.threads_dir / semester
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._load_last_sync(semester)
+        last_sync = self._load_last_sync(semester)
+        last_sync_dt = None
+        if last_sync and not force:
+            last_sync_dt = datetime.fromisoformat(last_sync)
+
         count = 0
+        skipped = 0
 
         for thread_summary in self.client.threads.list_all(course_id):
+            # Skip threads not updated since last sync
+            if last_sync_dt and thread_summary.updated_at:
+                if thread_summary.updated_at <= last_sync_dt:
+                    skipped += 1
+                    continue
+
             try:
                 thread_detail = self.client.threads.get(thread_summary.id)
             except Exception as e:
@@ -40,6 +54,9 @@ class ThreadIngester:
 
             (output_dir / filename).write_text(md_content, encoding="utf-8")
             count += 1
+
+        if skipped > 0:
+            console.print(f"[dim]Skipped {skipped} unchanged threads.[/dim]")
 
         self._save_last_sync(semester)
         return count

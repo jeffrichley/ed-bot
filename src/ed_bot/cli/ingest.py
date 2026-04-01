@@ -20,10 +20,11 @@ def threads(
     course: int = typer.Option(None, "--course", help="Course ID"),
     semester: str = typer.Option(None, "--semester", help="Semester name"),
     all_semesters: bool = typer.Option(False, "--all", help="All configured semesters"),
+    force: bool = typer.Option(False, "--force", help="Re-download all threads, ignoring last sync"),
     json_output: bool = typer.Option(False, "--json"),
     bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
 ):
-    """Ingest threads from EdStem."""
+    """Ingest threads from EdStem. Only downloads new/updated threads since last sync."""
     from ed_api import EdClient
     from ed_bot.config import BotConfig
     from ed_bot.ingestion.threads import ThreadIngester
@@ -35,7 +36,7 @@ def threads(
     if all_semesters:
         total = 0
         for sem in config.semesters:
-            count = ingester.ingest(sem["course_id"], sem["name"])
+            count = ingester.ingest(sem["course_id"], sem["name"], force=force)
             total += count
             if not json_output:
                 console.print(f"  {sem['name']}: {count} threads")
@@ -46,7 +47,7 @@ def threads(
     else:
         cid = course or config.course_id
         sem = semester or (config.semesters[0]["name"] if config.semesters else "default")
-        count = ingester.ingest(cid, sem)
+        count = ingester.ingest(cid, sem, force=force)
         if json_output:
             print(json.dumps({"semester": sem, "count": count}))
         else:
