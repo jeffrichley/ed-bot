@@ -81,3 +81,54 @@ def projects(
         print(json.dumps({"project": project_name, "count": count}))
     else:
         console.print(f"[green]Ingested {count} files for {project_name}.[/green]")
+
+
+@app.command()
+def lectures(
+    course: int = typer.Option(None, "--course", help="Course ID"),
+    lesson: str = typer.Option(None, "--lesson", help="Specific lesson title to ingest"),
+    json_output: bool = typer.Option(False, "--json"),
+    bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
+):
+    """Ingest lecture videos: download, transcribe, extract screenshots."""
+    from ed_api import EdClient
+    from ed_bot.config import BotConfig
+    from ed_bot.ingestion.lectures import LectureIngester
+
+    config = BotConfig.load(_get_bot_dir(bot_dir))
+    client = EdClient(region=config.region)
+    ingester = LectureIngester(config)
+
+    cid = course or config.course_id
+
+    # Get all lessons with video slides
+    console.print(f"[bold]Fetching lessons for course {cid}...[/bold]")
+    try:
+        video_slides = client.lessons.video_slides(cid)
+    except Exception as e:
+        console.print(f"[red]Failed to fetch lessons: {e}[/red]")
+        console.print("[dim]The lessons API may not be available yet.[/dim]")
+        raise typer.Exit(1)
+
+    if lesson:
+        video_slides = [(l, s) for l, s in video_slides if lesson.lower() in l.title.lower()]
+
+    if not video_slides:
+        console.print("No video slides found.")
+        raise typer.Exit(0)
+
+    console.print(f"Found {len(video_slides)} video slides.")
+
+    total = 0
+    for lesson_obj, slide in video_slides:
+        count = ingester.ingest_video(
+            video_url=slide.video_url,
+            lesson_title=f"{lesson_obj.title} - {slide.title}",
+            course_id=cid,
+        )
+        total += count
+
+    if json_output:
+        print(json.dumps({"count": total}))
+    else:
+        console.print(f"[green]Ingested {total} lecture videos.[/green]")
