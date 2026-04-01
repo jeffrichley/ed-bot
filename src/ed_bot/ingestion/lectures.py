@@ -86,31 +86,53 @@ class LectureIngester:
         return 1
 
     def _download_video(self, url: str, output_path: pathlib.Path) -> bool:
-        """Download video via yt-dlp."""
-        if not shutil.which("yt-dlp"):
-            console.print("[red]yt-dlp not found. Install with: pip install yt-dlp[/red]")
+        """Download video via yt-dlp Python API."""
+        try:
+            import yt_dlp
+        except ImportError:
+            console.print("[red]yt-dlp not installed. Add it with: uv add yt-dlp[/red]")
             return False
         try:
-            result = subprocess.run(
-                ["yt-dlp", "-o", str(output_path), "--no-playlist", url],
-                capture_output=True, text=True, timeout=600,
-            )
-            return result.returncode == 0 and output_path.exists()
+            ydl_opts = {
+                "outtmpl": str(output_path),
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "format": "best[ext=mp4]/best",
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            # yt-dlp may add extension, find the actual file
+            if output_path.exists():
+                return True
+            for f in output_path.parent.glob(f"{output_path.stem}*"):
+                if f.suffix in (".mp4", ".mkv", ".webm"):
+                    f.rename(output_path)
+                    return True
+            return False
         except Exception as e:
             console.print(f"[red]Download failed: {e}[/red]")
             return False
 
     def _download_subtitles(self, url: str, output_path: pathlib.Path) -> bool:
-        """Try to download subtitles via yt-dlp."""
-        if not shutil.which("yt-dlp"):
+        """Try to download subtitles via yt-dlp Python API."""
+        try:
+            import yt_dlp
+        except ImportError:
             return False
         try:
-            result = subprocess.run(
-                ["yt-dlp", "--skip-download", "--write-subs", "--write-auto-subs",
-                 "--sub-lang", "en", "--sub-format", "srt",
-                 "-o", str(output_path.with_suffix("")), url],
-                capture_output=True, text=True, timeout=60,
-            )
+            ydl_opts = {
+                "outtmpl": str(output_path.with_suffix("")),
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["en"],
+                "subtitlesformat": "srt",
+                "quiet": True,
+                "no_warnings": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
             # yt-dlp adds language suffix, find the file
             for srt in output_path.parent.glob("*.srt"):
                 if srt != output_path:
