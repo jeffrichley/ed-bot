@@ -1,0 +1,67 @@
+site_name: ed-bot
+site_url: https://jeffrichley.github.io/ed-bot
+site_description: EdStem forum automation for GT ML4T and beyond.
+repo_url: https://github.com/jeffrichley/ed-bot
+repo_name: jeffrichley/ed-bot
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    scheme: iris
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/iris.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+    - Quick Start: getting-started/quickstart.md
+  - Ingestion:
+    - Threads: ingestion/threads.md
+    - Projects: ingestion/projects.md
+    - Lectures: ingestion/lectures.md
+  - Answer Engine:
+    - Classification: engine/classification.md
+    - Guardrails: engine/guardrails.md
+    - Draft Generation: engine/drafting.md
+    - Review Queue: engine/queue.md
+  - Playbook:
+    - Style Guide: playbook/style-guide.md
+    - Templates: playbook/templates.md
+  - CLI Reference: cli.md
+  - Claude Code Skills: skills.md

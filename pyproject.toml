@@ -42,5 +42,6 @@ pyqmd = { path = "../py-qmd", editable = true }
 
 [dependency-groups]
 dev = [
+    "mkdocs-material>=9.7.6",
     "pytest>=9.0.2",
 ]

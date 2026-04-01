@@ -1,0 +1,256 @@
+/* Iris Theme for MkDocs Material
+ * Inspired by iris flowers — calm, elegant, intelligent
+ * Deep blue-black base, soft iris purple accents, diffused glow
+ */
+
+/* ── Color Scheme ─────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] {
+  /* Backgrounds */
+  --md-default-bg-color: #0B0F14;
+  --md-default-bg-color--light: #121821;
+  --md-default-bg-color--lighter: #1A2233;
+  --md-default-bg-color--lightest: #222D3E;
+
+  /* Foreground / Text */
+  --md-default-fg-color: #E6EAF2;
+  --md-default-fg-color--light: #9AA4B2;
+  --md-default-fg-color--lighter: #6B7585;
+  --md-default-fg-color--lightest: #3D4654;
+
+  /* Primary accent — Iris Purple */
+  --md-primary-fg-color: #7A5CFF;
+  --md-primary-fg-color--light: #9B7BFF;
+  --md-primary-fg-color--dark: #5D3FD3;
+  --md-primary-bg-color: #E6EAF2;
+  --md-primary-bg-color--light: #E6EAF2;
+
+  /* Accent */
+  --md-accent-fg-color: #9B7BFF;
+  --md-accent-fg-color--transparent: rgba(122, 92, 255, 0.15);
+  --md-accent-bg-color: #7A5CFF;
+  --md-accent-bg-color--light: rgba(122, 92, 255, 0.25);
+
+  /* Code */
+  --md-code-bg-color: #121821;
+  --md-code-fg-color: #E6EAF2;
+  --md-code-hl-color: rgba(122, 92, 255, 0.15);
+
+  /* Typeset */
+  --md-typeset-color: #E6EAF2;
+  --md-typeset-a-color: #9B7BFF;
+
+  /* Footer */
+  --md-footer-bg-color: #0B0F14;
+  --md-footer-bg-color--dark: #080B10;
+  --md-footer-fg-color: #9AA4B2;
+  --md-footer-fg-color--light: #6B7585;
+  --md-footer-fg-color--lighter: #3D4654;
+
+  /* Shadow */
+  --md-shadow-z1: 0 4px 10px rgba(0, 0, 0, 0.3);
+  --md-shadow-z2: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --md-shadow-z3: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Header ───────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-header {
+  background: linear-gradient(135deg, #0B0F14 0%, #121821 100%);
+  border-bottom: 1px solid rgba(122, 92, 255, 0.15);
+}
+
+[data-md-color-scheme="iris"] .md-header__title {
+  font-weight: 600;
+}
+
+/* ── Navigation tabs ──────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-tabs {
+  background: #0B0F14;
+  border-bottom: 1px solid rgba(122, 92, 255, 0.1);
+}
+
+[data-md-color-scheme="iris"] .md-tabs__link--active {
+  color: #9B7BFF;
+  border-bottom: 2px solid #7A5CFF;
+}
+
+/* ── Sidebar ──────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-sidebar {
+  background: #0B0F14;
+}
+
+[data-md-color-scheme="iris"] .md-nav__link--active {
+  color: #9B7BFF;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="iris"] .md-nav__link:hover {
+  color: #9B7BFF;
+}
+
+/* ── Code blocks ──────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .highlight code,
+[data-md-color-scheme="iris"] code {
+  border-radius: 8px;
+}
+
+[data-md-color-scheme="iris"] .md-typeset pre {
+  border-radius: 12px;
+  border: 1px solid rgba(122, 92, 255, 0.1);
+}
+
+[data-md-color-scheme="iris"] .md-typeset code {
+  background: #1A2233;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #9B7BFF;
+}
+
+/* ── Admonitions (callouts) ───────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-typeset .admonition,
+[data-md-color-scheme="iris"] .md-typeset details {
+  border-radius: 12px;
+  border: 1px solid rgba(122, 92, 255, 0.15);
+  background: #121821;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+[data-md-color-scheme="iris"] .md-typeset .admonition-title,
+[data-md-color-scheme="iris"] .md-typeset summary {
+  border-radius: 12px 12px 0 0;
+}
+
+/* ── Cards effect for content sections ────────────────── */
+
+[data-md-color-scheme="iris"] .md-typeset h2 {
+  border-bottom: 1px solid rgba(122, 92, 255, 0.15);
+  padding-bottom: 0.4em;
+}
+
+/* ── Links ────────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-typeset a {
+  color: #9B7BFF;
+  text-decoration: none;
+  transition: color 200ms ease-out, text-shadow 200ms ease-out;
+}
+
+[data-md-color-scheme="iris"] .md-typeset a:hover {
+  color: #B9A3FF;
+  text-shadow: 0 0 8px rgba(122, 92, 255, 0.3);
+}
+
+/* ── Tables ───────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-typeset table:not([class]) {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(122, 92, 255, 0.1);
+}
+
+[data-md-color-scheme="iris"] .md-typeset table:not([class]) th {
+  background: #1A2233;
+  color: #9B7BFF;
+}
+
+[data-md-color-scheme="iris"] .md-typeset table:not([class]) tr:hover td {
+  background: rgba(122, 92, 255, 0.05);
+}
+
+/* ── Search ───────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] .md-search__form {
+  background: #121821;
+  border: 1px solid rgba(122, 92, 255, 0.15);
+  border-radius: 8px;
+}
+
+[data-md-color-scheme="iris"] .md-search__form:hover {
+  border-color: rgba(122, 92, 255, 0.3);
+  box-shadow: 0 0 12px rgba(122, 92, 255, 0.1);
+}
+
+/* ── Hero section (for landing page) ──────────────────── */
+
+.iris-hero {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: radial-gradient(ellipse at center, rgba(122, 92, 255, 0.12) 0%, transparent 70%);
+  border-radius: 16px;
+  margin-bottom: 2rem;
+}
+
+.iris-hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #7A5CFF 0%, #9B7BFF 50%, #B9A3FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.iris-hero p {
+  font-size: 1.25rem;
+  color: #9AA4B2;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* ── Feature cards (for landing page) ─────────────────── */
+
+.iris-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.iris-card {
+  background: #121821;
+  border: 1px solid rgba(122, 92, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, border-color 200ms ease-out;
+}
+
+.iris-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(122, 92, 255, 0.15);
+  border-color: rgba(122, 92, 255, 0.3);
+}
+
+.iris-card h3 {
+  color: #9B7BFF;
+  margin-top: 0;
+}
+
+/* ── Scrollbar ────────────────────────────────────────── */
+
+[data-md-color-scheme="iris"] ::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-md-color-scheme="iris"] ::-webkit-scrollbar-track {
+  background: #0B0F14;
+}
+
+[data-md-color-scheme="iris"] ::-webkit-scrollbar-thumb {
+  background: #2A3240;
+  border-radius: 4px;
+}
+
+[data-md-color-scheme="iris"] ::-webkit-scrollbar-thumb:hover {
+  background: #7A5CFF;
+}
+
+/* ── Smooth transitions everywhere ────────────────────── */
+
+[data-md-color-scheme="iris"] * {
+  transition-duration: 200ms;
+}
