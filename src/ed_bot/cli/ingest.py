@@ -84,6 +84,47 @@ def projects(
 
 
 @app.command()
+def canvas(
+    canvas_course_id: int = typer.Argument(help="Canvas course ID (from URL)"),
+    filter_prefix: str = typer.Option("Project", "--filter", help="Only ingest assignments starting with this prefix. Use '' for all."),
+    list_only: bool = typer.Option(False, "--list", help="List assignments without ingesting"),
+    json_output: bool = typer.Option(False, "--json"),
+    bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
+):
+    """Ingest project requirements from Canvas assignments."""
+    from ed_bot.config import BotConfig
+    from ed_bot.ingestion.canvas import CanvasIngester
+
+    config = BotConfig.load(_get_bot_dir(bot_dir))
+    ingester = CanvasIngester(config)
+
+    if list_only:
+        assignments = ingester.list_assignments(canvas_course_id)
+        if filter_prefix:
+            assignments = [a for a in assignments if a["name"].startswith(filter_prefix)]
+        if json_output:
+            print(json.dumps(assignments))
+        else:
+            from rich.table import Table
+            table = Table(title=f"Assignments in Canvas course {canvas_course_id}")
+            table.add_column("ID", justify="right")
+            table.add_column("Name")
+            table.add_column("Points", justify="right")
+            table.add_column("Description")
+            for a in assignments:
+                table.add_row(str(a["id"]), a["name"], str(a["points"]), f"{a['desc_length']} chars")
+            console.print(table)
+        return
+
+    prefix = filter_prefix if filter_prefix else None
+    count = ingester.ingest_assignments(canvas_course_id, filter_prefix=prefix)
+    if json_output:
+        print(json.dumps({"count": count}))
+    else:
+        console.print(f"[green]Ingested {count} assignments from Canvas.[/green]")
+
+
+@app.command()
 def lectures(
     course: int = typer.Option(None, "--course", help="Course ID"),
     lesson: str = typer.Option(None, "--lesson", help="Specific lesson title to ingest"),
