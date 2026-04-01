@@ -24,14 +24,17 @@ class BotConfig:
         if not config_path.exists():
             raise FileNotFoundError(f"Config not found: {config_path}")
         data = yaml.safe_load(config_path.read_text())
+        def expand(p: str, default: str) -> str:
+            return str(pathlib.Path(p).expanduser()) if p else str(bot_dir / default)
+
         return cls(
             bot_dir=bot_dir,
             course_id=data.get("course_id", 0),
             region=data.get("region", "us"),
             semesters=data.get("semesters", []),
-            data_dir=data.get("data_dir", str(bot_dir / "knowledge")),
-            playbook_dir=data.get("playbook_dir", str(bot_dir / "playbook")),
-            draft_queue_dir=data.get("draft_queue_dir", str(bot_dir / "drafts")),
+            data_dir=expand(data.get("data_dir", ""), "knowledge"),
+            playbook_dir=expand(data.get("playbook_dir", ""), "playbook"),
+            draft_queue_dir=expand(data.get("draft_queue_dir", ""), "drafts"),
         )
 
     def save(self) -> None:
