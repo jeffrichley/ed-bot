@@ -5,6 +5,7 @@ import pathlib
 from datetime import datetime, timezone
 
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
 
 from ed_bot.config import BotConfig
 from ed_bot.ingestion.markdown import CommentData, ThreadData, thread_filename, thread_to_markdown
@@ -32,31 +33,65 @@ class ThreadIngester:
         if last_sync and not force:
             last_sync_dt = datetime.fromisoformat(last_sync)
 
-        count = 0
-        skipped = 0
+        # Phase 1: Fetch thread listing (fast, paginated)
+        console.print(f"[bold]Fetching thread list for {semester}...[/bold]")
+        all_summaries = list(self.client.threads.list_all(course_id))
+        console.print(f"  Found {len(all_summaries)} total threads.")
 
-        for thread_summary in self.client.threads.list_all(course_id):
-            # Skip threads not updated since last sync
-            if last_sync_dt and thread_summary.updated_at:
-                if thread_summary.updated_at <= last_sync_dt:
-                    skipped += 1
+        # Filter to threads needing update
+        if last_sync_dt:
+            to_fetch = [t for t in all_summaries if not t.updated_at or t.updated_at > last_sync_dt]
+            skipped = len(all_summaries) - len(to_fetch)
+            if skipped > 0:
+                console.print(f"  [dim]Skipping {skipped} unchanged threads.[/dim]")
+        else:
+            to_fetch = all_summaries
+            skipped = 0
+
+        if not to_fetch:
+            console.print(f"  [green]Already up to date.[/green]")
+            self._save_last_sync(semester)
+            return 0
+
+        console.print(f"  [bold]Downloading {len(to_fetch)} threads...[/bold]")
+
+        # Phase 2: Fetch details with progress bar
+        count = 0
+        errors = 0
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Ingesting {semester}", total=len(to_fetch))
+
+            for thread_summary in to_fetch:
+                try:
+                    thread_detail = self.client.threads.get(thread_summary.id)
+                except Exception as e:
+                    errors += 1
+                    progress.console.print(
+                        f"  [yellow]Warning: Failed to fetch #{thread_summary.number}: {e}[/yellow]"
+                    )
+                    progress.advance(task)
                     continue
 
-            try:
-                thread_detail = self.client.threads.get(thread_summary.id)
-            except Exception as e:
-                console.print(f"[yellow]Warning: Failed to fetch thread {thread_summary.id}: {e}[/yellow]")
-                continue
+                thread_data = self._convert_thread(thread_detail, semester)
+                filename = thread_filename(thread_data.thread_number, thread_data.title)
+                md_content = thread_to_markdown(thread_data)
 
-            thread_data = self._convert_thread(thread_detail, semester)
-            filename = thread_filename(thread_data.thread_number, thread_data.title)
-            md_content = thread_to_markdown(thread_data)
+                (output_dir / filename).write_text(md_content, encoding="utf-8")
+                count += 1
+                progress.advance(task)
 
-            (output_dir / filename).write_text(md_content, encoding="utf-8")
-            count += 1
-
-        if skipped > 0:
-            console.print(f"[dim]Skipped {skipped} unchanged threads.[/dim]")
+        if errors > 0:
+            console.print(f"  [yellow]{errors} threads failed to download.[/yellow]")
 
         self._save_last_sync(semester)
         return count
