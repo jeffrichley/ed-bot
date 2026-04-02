@@ -1,84 +1,62 @@
 # Lecture Ingestion
 
-ed-bot can index lecture transcripts so the answer engine can cite specific course content when answering conceptual questions.
+`ed ingest lectures` runs the full video pipeline: download from Kaltura, transcribe with `faster-whisper`, and generate indexed markdown with complete provenance.
 
-!!! warning "Optional dependency required"
-    Lecture transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper), which is **not** installed by default. Install it with the `lectures` extra:
+## Prerequisites
 
-    ```bash
-    uv sync --extra lectures
-    ```
-
-    Without this extra, you can still manually place transcript markdown files in the lectures directory.
-
-## Lectures directory
-
-Transcript files are stored in `{data_dir}/lectures/`. You can populate this directory manually or via transcription tooling:
-
-```
-~/.ed-bot/knowledge/lectures/
-├── week01-introduction-to-ml4t.md
-├── week02-market-mechanics.md
-├── week03-portfolio-theory.md
-└── ...
-```
-
-## Transcript format
-
-Each lecture file should include YAML frontmatter followed by the transcript body:
-
-```yaml
----
-title: "Week 3: Portfolio Theory and Optimization"
-week: 3
-date: 2025-09-15
-topics:
-  - mean-variance optimization
-  - Sharpe ratio
-  - efficient frontier
----
-
-# Week 3: Portfolio Theory and Optimization
-
-## Introduction
-
-In this lecture we explore how to construct an optimal portfolio
-given a set of assets and historical return data...
-
-## The Sharpe Ratio
-
-The Sharpe ratio measures risk-adjusted return:
-
-$$S = \frac{R_p - R_f}{\sigma_p}$$
-
-Where $R_p$ is portfolio return, $R_f$ is the risk-free rate,
-and $\sigma_p$ is portfolio volatility...
-```
-
-## Manual transcript placement
-
-The simplest approach is to use your course recording platform's auto-generated captions, clean them up lightly, and save as markdown:
+Lecture ingestion requires three external dependencies. Install them with the `lectures` extra:
 
 ```bash
-# Convert a caption file to a transcript markdown
-cp week03-captions.txt ~/.ed-bot/knowledge/lectures/week03-portfolio-theory.md
+uv sync --extra lectures
 ```
 
-## Using faster-whisper
+This installs:
 
-With the `lectures` extra installed, you can transcribe audio/video files directly. faster-whisper runs entirely locally using Whisper model weights — no cloud service required:
+- **yt-dlp** — video download via Python API
+- **ffmpeg** — audio extraction (must also be on `$PATH`)
+- **faster-whisper** — local Whisper transcription, no cloud required
 
-```python
-from faster_whisper import WhisperModel
+Verify ffmpeg is available:
 
-model = WhisperModel("base", device="cpu", compute_type="int8")
-segments, info = model.transcribe("lecture03.mp4", beam_size=5)
-
-with open("~/.ed-bot/knowledge/lectures/week03.md", "w") as f:
-    f.write("---\ntitle: Week 3\n---\n\n")
-    for segment in segments:
-        f.write(segment.text + "\n")
+```bash
+ffmpeg -version
 ```
+
+## Command
+
+```bash
+ed ingest lectures [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--course INT` | Kaltura course ID |
+| `--force` | Re-ingest lectures that have already been processed |
+| `--bot-dir PATH` | Override bot directory (default: `~/.ed-bot`) |
+
+### Examples
+
+Ingest all lectures for a course:
+
+```bash
+ed ingest lectures --course 91346
+```
+
+Force re-ingestion of all lectures (re-downloads and re-transcribes):
+
+```bash
+ed ingest lectures --course 91346 --force
+```
+
+## Kaltura video handling
+
+Lecture videos hosted on Kaltura are accessed via embed URLs. The ingester converts each Kaltura embed URL to a direct download URL, then uses the yt-dlp Python API to download the video file.
+
+Downloaded video files are stored in `{data_dir}/lectures/videos/` for on-demand frame extraction. The audio track is extracted to a temporary file for transcription, then discarded.
+
+## Transcription
+
+Audio is transcribed locally using `faster-whisper`. The model runs entirely on your hardware — no cloud service required.
 
 Recommended models by hardware:
 
@@ -88,17 +66,117 @@ Recommended models by hardware:
 | CUDA GPU | `medium` or `large-v3` | Best accuracy |
 | Apple Silicon | `medium` with `metal` | Fast on M-series |
 
-## Knowledge base indexing
+### SRT subtitle support
 
-Lecture files are indexed into the `lectures` pyqmd collection:
+If a Kaltura video already has subtitle/caption files (SRT format), the ingester uses them directly instead of running Whisper — significantly faster and often more accurate for professional course recordings.
 
-```python
-from ed_bot.knowledge.collections import KnowledgeBase
-from ed_bot.config import BotConfig
+When SRT captions are available:
 
-config = BotConfig.load(pathlib.Path("~/.ed-bot").expanduser())
-kb = KnowledgeBase(config)
-kb.index_lectures()
+```
+Lecture 03: Portfolio Theory — using existing SRT captions
+```
+
+When transcription is needed:
+
+```
+Lecture 04: CAPM — transcribing with faster-whisper (medium)...
+```
+
+## Output format
+
+Each lecture is saved as `{data_dir}/lectures/{slug}.md`:
+
+```
+~/.ed-bot/knowledge/lectures/
+├── week01-introduction-to-ml4t.md
+├── week02-market-mechanics.md
+├── week03-portfolio-theory.md
+└── ...
+```
+
+### Frontmatter
+
+```yaml
+---
+title: "Week 3: Portfolio Theory and Optimization"
+week: 3
+lesson_id: "lsn_0003"
+slide_id: "sld_0312"
+edstem_url: "https://edstem.org/us/courses/12345/lessons/0003/slides/0312"
+source: kaltura
+kaltura_entry_id: "1_abc123de"
+transcription_method: faster-whisper
+model: medium
+ingested: 2025-09-15T10:00:00+00:00
+---
+```
+
+### Body
+
+After the frontmatter, the file contains timestamped transcript segments:
+
+```markdown
+# Week 3: Portfolio Theory and Optimization
+
+## [00:00:00]
+
+In this lecture we explore how to construct an optimal portfolio
+given a set of assets and historical return data.
+
+## [00:02:15]
+
+The Sharpe ratio measures risk-adjusted return. It's defined as the
+portfolio return minus the risk-free rate, divided by the portfolio
+standard deviation...
+```
+
+## Provenance and deep links
+
+Every lecture file carries full provenance:
+
+- **lesson_id** — the Kaltura or LMS lesson identifier
+- **slide_id** — the specific slide within a lesson
+- **EdStem deep link** — direct URL to the slide in EdStem Lessons
+
+This allows the answer engine to cite specific lectures with clickable links in draft answers:
+
+```
+Source: Week 3, slide 12 — https://edstem.org/us/courses/12345/lessons/0003/slides/0312
+```
+
+## On-demand frame extraction
+
+Video files retained in `{data_dir}/lectures/videos/` can be used for frame extraction at a specific timestamp. This is useful when generating answers that benefit from a screenshot of a specific slide or diagram.
+
+Frame extraction is performed on demand — the video is not pre-processed into frames during ingestion.
+
+## Skip logic
+
+The ingester tracks which lectures have already been processed. On re-runs, already-ingested lectures are skipped unless `--force` is passed:
+
+```
+Lecture 01: Introduction — already ingested, skipping
+Lecture 02: Data Sources — already ingested, skipping
+Lecture 03: Portfolio Theory — transcribing...
+```
+
+State is stored in `~/.ed-bot/state/lectures.json`.
+
+## After ingestion
+
+Run `ed index` to load lecture transcripts into the vector store:
+
+```bash
+ed ingest lectures --course 91346
+ed index
+```
+
+Or contextualize first:
+
+```bash
+ed ingest lectures --course 91346
+ed contextualize -d lectures
+ed index
 ```
 
 ## How lecture context appears in drafts
@@ -109,7 +187,7 @@ When the answer engine retrieves relevant context, lecture chunks appear under a
 ## Relevant Lecture Content
 
 ---
-Source: lectures/week03-portfolio-theory.md
+Source: Week 3, slide 12 — https://edstem.org/us/courses/12345/lessons/0003/slides/0312
 The Sharpe ratio measures risk-adjusted return. In lecture 3 we showed
 that maximizing the Sharpe ratio is equivalent to finding the tangent
 portfolio on the efficient frontier...

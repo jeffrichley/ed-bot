@@ -13,12 +13,13 @@ ed ingest threads [OPTIONS]
 | `--semester TEXT` | Semester name (e.g. `fall2025`) |
 | `--course INT` | EdStem course ID (overrides config) |
 | `--all` | Ingest all semesters defined in config |
+| `--force` | Re-download all threads, ignoring last-sync timestamp |
 | `--json` | Output JSON instead of rich text |
 | `--bot-dir PATH` | Override bot directory (default: `~/.ed-bot`) |
 
 ### Examples
 
-Ingest the current semester:
+Ingest the current semester (incremental — only updated threads):
 
 ```bash
 ed ingest threads --semester fall2025
@@ -30,11 +31,43 @@ Ingest all configured semesters:
 ed ingest threads --all
 ```
 
+Force a full re-download of all threads:
+
+```bash
+ed ingest threads --all --force
+```
+
 Machine-readable output:
 
 ```bash
 ed ingest threads --semester fall2025 --json
 # {"semester": "fall2025", "count": 342}
+```
+
+## Incremental sync
+
+The ingester records the timestamp of each run in `~/.ed-bot/state/last-sync.json`:
+
+```json
+{
+  "fall2025": "2025-10-01T12:00:00+00:00",
+  "spring2025": "2025-05-15T08:30:00+00:00"
+}
+```
+
+On subsequent runs only threads updated since that timestamp are fetched, making routine syncs fast. Pass `--force` to re-download every thread regardless:
+
+```bash
+ed ingest threads --all --force
+```
+
+## Rich progress bar
+
+During ingestion a live Rich progress bar shows per-semester progress with an ETA:
+
+```
+Ingesting fall2025... ━━━━━━━━━━━━━━━━━━━━ 100% 342/342 threads [00:45, 7.6 threads/s]
+Ingesting spring2025... ━━━━━━━━━━━━━━━━━━━━ 100% 287/287 threads [00:38, 7.5 threads/s]
 ```
 
 ## Output format
@@ -87,27 +120,23 @@ Great question! NaN values usually come from...
 Thanks! That fixed it.
 ```
 
-## Incremental sync
-
-The ingester records the time of each run in `~/.ed-bot/state/last-sync.json`:
-
-```json
-{
-  "fall2025": "2025-10-01T12:00:00+00:00"
-}
-```
-
-On subsequent runs the same files are overwritten, so the knowledge base always reflects the latest thread state (including new comments and endorsements). Re-index after ingestion to update the vector store:
-
-```bash
-ed ingest threads --semester fall2025
-# knowledge base is re-indexed automatically on next answer/status call
-```
-
 ## EdStem XML conversion
 
 Thread content is stored in EdStem's XML-based rich text format. The ingester uses `ed_api.content.ed_xml_to_markdown` to convert it to clean markdown. If that function is unavailable the raw content is stored as-is.
 
-## Knowledge base indexing
+## After ingestion
 
-Ingested markdown files are indexed into pyqmd's `threads-{semester}` collection on demand. The `KnowledgeBase.index_threads(semester)` method handles collection creation and chunking automatically.
+After ingesting threads, run `ed index` to update the vector store:
+
+```bash
+ed ingest threads --all
+ed index
+```
+
+Or run contextualization first if you want retrieval-augmented context:
+
+```bash
+ed ingest threads --all
+ed contextualize -d threads
+ed index
+```

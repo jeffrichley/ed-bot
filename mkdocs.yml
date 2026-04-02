@@ -53,8 +53,10 @@ nav:
     - Quick Start: getting-started/quickstart.md
   - Ingestion:
     - Threads: ingestion/threads.md
+    - Canvas: ingestion/canvas.md
     - Projects: ingestion/projects.md
     - Lectures: ingestion/lectures.md
+    - Contextualize: ingestion/contextualize.md
   - Answer Engine:
     - Classification: engine/classification.md
     - Guardrails: engine/guardrails.md

@@ -1,8 +1,69 @@
 # Project Ingestion
 
-`ProjectIngester` converts project materials into indexed markdown so the answer engine can retrieve course-specific context. It handles two input types: PDF requirement documents and Python starter code.
+Project requirements are pulled directly from Canvas LMS. The Canvas ingester fetches assignment HTML, converts it to clean markdown, and stores it alongside other knowledge base content. Legacy PDF-based ingestion is also supported for courses not using Canvas.
 
-## Command
+## Canvas ingestion (primary method)
+
+`ed ingest canvas` pulls assignments, pages, and announcements from a Canvas course in a single command. See the [Canvas Integration Guide](canvas.md) for full details.
+
+```bash
+ed ingest canvas 498126
+```
+
+Project requirements are saved to `{data_dir}/projects/`:
+
+```
+~/.ed-bot/knowledge/projects/
+├── project1-requirements.md
+├── project2-requirements.md
+├── project3-requirements.md
+└── ...
+```
+
+### Preview before ingesting
+
+Use `--list` to see what assignments are available without downloading:
+
+```bash
+ed ingest canvas 498126 --list
+```
+
+```
+Canvas assignments for course 498126:
+  [123456] Project 1: DTDP (due 2025-09-07)
+  [123457] Project 2: Optimize Something (due 2025-09-21)
+  [123458] Project 3: Assess Learners (due 2025-10-05)
+  ...
+```
+
+### Selective ingestion
+
+By default, `ed ingest canvas` fetches assignments matching a filter. Pass `--filter ""` to pull all assignments regardless of name:
+
+```bash
+ed ingest canvas 498126 --filter ""
+```
+
+## Frontmatter format
+
+Canvas-sourced project files include provenance metadata:
+
+```yaml
+---
+project: "Project 2"
+type: requirements
+source: canvas
+canvas_assignment_id: 123457
+canvas_course_id: 498126
+ingested: 2025-09-01T10:00:00+00:00
+---
+```
+
+The full converted markdown follows.
+
+## Legacy PDF ingestion
+
+For courses where requirements are distributed as PDFs rather than Canvas assignments, `ed ingest projects` is still available:
 
 ```bash
 ed ingest projects PATH [OPTIONS]
@@ -16,7 +77,7 @@ ed ingest projects PATH [OPTIONS]
 | `--json` | Output JSON |
 | `--bot-dir PATH` | Override bot directory |
 
-### Examples
+### PDF examples
 
 Ingest a requirements PDF:
 
@@ -32,52 +93,13 @@ ed ingest projects ~/assignments/project2/starter/ --name "project2"
 # Ingested 4 files for project2.
 ```
 
-JSON output:
-
-```bash
-ed ingest projects project1.pdf --name "Project 1" --json
-# {"project": "Project 1", "count": 1}
-```
-
-## PDF conversion
+### PDF conversion
 
 The ingester uses [markitdown](https://github.com/microsoft/markitdown) to convert PDFs to markdown. If markitdown fails (e.g., a scanned image PDF), it falls back to raw text extraction.
 
-Output files are stored in `{projects_dir}/`:
+### Starter code ingestion
 
-```
-~/.ed-bot/knowledge/projects/project-2-requirements.md
-```
-
-### PDF frontmatter format
-
-```yaml
----
-project: "Project 2"
-type: requirements
-source: "project2.pdf"
-ingested: 2025-09-01T10:00:00+00:00
----
-```
-
-The full converted markdown follows.
-
-## Starter code ingestion
-
-For Python files, each `.py` file is wrapped in a markdown code fence with identifying frontmatter. Passing a directory recurses through all `**/*.py` files:
-
-```bash
-ed ingest projects ./project2/starter --name "project2"
-```
-
-Output per file:
-
-```
-~/.ed-bot/knowledge/projects/project2-analysis.md
-~/.ed-bot/knowledge/projects/project2-optimization.md
-```
-
-### Starter code format
+For Python files, each `.py` file is wrapped in a markdown code fence with identifying frontmatter:
 
 ```yaml
 ---
@@ -90,7 +112,6 @@ ingested: 2025-09-01T10:01:00+00:00
 # analysis.py (Starter Code)
 
 ```python
-# Your code here
 def analyze_portfolio(prices):
     ...
 ```
@@ -101,7 +122,7 @@ def analyze_portfolio(prices):
 
 ## Project slug naming
 
-The ingester derives a URL-safe slug from the project name by lowercasing and replacing non-alphanumeric characters with hyphens:
+The ingester derives a URL-safe slug from the project name:
 
 | Project name | Slug |
 |-------------|------|
@@ -111,11 +132,11 @@ The ingester derives a URL-safe slug from the project name by lowercasing and re
 
 The guardrails system uses the same slug to locate `{guardrails_dir}/{slug}.md`.
 
-## Knowledge base indexing
+## After ingestion
 
-Project files are indexed into the `projects` pyqmd collection. The collection is created automatically if it does not exist:
+Run `ed index` to load project content into the vector store:
 
-```python
-kb = KnowledgeBase(config)
-kb.index_projects()
+```bash
+ed ingest canvas 498126
+ed index
 ```

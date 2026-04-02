@@ -11,14 +11,22 @@ After first run, `~/.ed-bot/` will contain:
 ├── config.yaml            # main configuration
 ├── knowledge/             # ingested content (data_dir)
 │   ├── threads/           # per-semester thread markdown files
-│   │   └── fall2025/
-│   │       ├── 0001-why-does-my-code-crash.md
-│   │       └── ...
-│   ├── projects/          # project requirements + starter code
+│   │   ├── fall2025/
+│   │   │   ├── 0001-why-does-my-code-crash.md
+│   │   │   └── ...
+│   │   └── spring2025/
+│   ├── projects/          # project requirements (Canvas or PDF)
 │   │   ├── project1-requirements.md
-│   │   └── project1-analysis.md
-│   └── lectures/          # lecture transcripts
-│       └── week01-intro.md
+│   │   └── project2-requirements.md
+│   ├── lectures/          # lecture transcripts
+│   │   ├── week01-intro.md
+│   │   └── ...
+│   ├── canvas-pages/      # Canvas LMS pages (policies, guides)
+│   │   ├── course-policies.md
+│   │   └── ...
+│   └── announcements/     # Canvas announcements
+│       ├── 2025-08-14-welcome.md
+│       └── ...
 ├── playbook/              # style guide + guardrails (playbook_dir)
 │   ├── style-guide.md     # global response style guide
 │   └── guardrails/        # per-project guardrail files
@@ -28,7 +36,8 @@ After first run, `~/.ed-bot/` will contain:
 │   └── a3f9c12b0011.json
 ├── pyqmd/                 # pyqmd vector index data
 └── state/
-    └── last-sync.json     # tracks last ingestion timestamps
+    ├── last-sync.json     # tracks last thread ingestion timestamps
+    └── contextualize/     # per-file contextualization state
 ```
 
 ## config.yaml
@@ -47,6 +56,12 @@ semesters:
   - name: spring2025
     course_id: 11111
 
+# Canvas LMS course ID (shown in the URL: canvas.institution.edu/courses/<id>)
+canvas_course_id: 498126
+
+# Kaltura course ID for lecture video downloads
+kaltura_course_id: 91346
+
 # Where to store ingested markdown files
 data_dir: ~/.ed-bot/knowledge
 
@@ -55,7 +70,35 @@ playbook_dir: ~/.ed-bot/playbook
 
 # Where draft JSON files are stored
 draft_queue_dir: ~/.ed-bot/drafts
+
+# Ollama model used by `ed contextualize` (default: llama3.2)
+# contextualize_model: llama3.2
 ```
+
+## API credentials
+
+ed-bot reads credentials from environment variables. Add these to your shell profile (`.bashrc`, `.zshrc`, etc.):
+
+```bash
+# EdStem API token (required for thread ingestion)
+export ED_API_TOKEN=your_edstem_token
+
+# Anthropic API key (required for answer generation)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Canvas API token (required for Canvas ingestion)
+export CANVAS_API_TOKEN=your_canvas_token
+```
+
+### Obtaining a Canvas API token
+
+1. Log in to Canvas and go to **Account → Settings**
+2. Scroll to **Approved Integrations** and click **+ New Access Token**
+3. Set a purpose (e.g. "ed-bot") and an expiry date
+4. Copy the token — Canvas will not show it again
+
+!!! warning "Token scope"
+    The Canvas token only needs read access to your course. Do not grant write permissions unless you intend to post announcements or grades through ed-bot.
 
 ## BotConfig properties
 
@@ -66,6 +109,8 @@ draft_queue_dir: ~/.ed-bot/drafts
 | `threads_dir` | `{data_dir}/threads` |
 | `projects_dir` | `{data_dir}/projects` |
 | `lectures_dir` | `{data_dir}/lectures` |
+| `canvas_pages_dir` | `{data_dir}/canvas-pages` |
+| `announcements_dir` | `{data_dir}/announcements` |
 | `guardrails_dir` | `{playbook_dir}/guardrails` |
 | `style_guide_path` | `{playbook_dir}/style-guide.md` |
 | `drafts_dir` | `{draft_queue_dir}` |

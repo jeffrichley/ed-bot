@@ -12,7 +12,31 @@ EdStem forum automation for GT ML4T and beyond.
 
 ### Knowledge Base
 
-Powered by [pyqmd](https://github.com/jeffrichley/py-qmd). Indexes past Q&A threads, project requirements, and lecture transcripts into semantic vector collections — giving every draft answer grounded, course-specific context.
+Powered by [pyqmd](https://github.com/jeffrichley/py-qmd). **36,526 chunks** indexed across 8,345 threads (5 semesters), 11 project requirements, 22 Canvas pages, 21 announcements, and 333 lecture transcripts — giving every draft answer grounded, course-specific context.
+
+</div>
+
+<div class="iris-card" markdown>
+
+### Canvas Ingestion
+
+Pull project requirements, course policy pages, and announcements directly from Canvas LMS. HTML is automatically converted to clean markdown and stored alongside thread and lecture content.
+
+</div>
+
+<div class="iris-card" markdown>
+
+### Lecture Pipeline
+
+Full video pipeline: download from Kaltura via `yt-dlp`, transcribe with `faster-whisper`, and generate indexed markdown with full provenance — lesson ID, slide ID, and EdStem deep links. Skips already-ingested lectures automatically.
+
+</div>
+
+<div class="iris-card" markdown>
+
+### Contextual Retrieval
+
+`ed contextualize` generates search context for every knowledge base file using Ollama (llama3.2 by default). Async concurrent processing delivers an **8x speedup** and is fully resumable — safe to stop and restart at any point.
 
 </div>
 
@@ -52,7 +76,7 @@ First-class `/ed-status`, `/ed-review`, `/ed-answer`, and `/ed-ingest` skills le
 
 ### Dual-Mode CLI
 
-Every command supports `--json` output for scripting alongside human-readable rich output. The `ed` entry point exposes `ingest`, `status`, `review`, `answer`, and `guardrails` sub-commands.
+Every command supports `--json` output for scripting alongside human-readable rich output. The `ed` entry point exposes `ingest`, `contextualize`, `index`, `status`, `review`, `answer`, and `guardrails` sub-commands.
 
 </div>
 
@@ -60,49 +84,62 @@ Every command supports `--json` output for scripting alongside human-readable ri
 
 ## Workflow
 
-The typical ed-bot session takes five steps:
+The full ed-bot pipeline — from raw content to ready-to-review drafts:
 
 ```
+┌──────────────────────────────────────────────┐
+│              INGEST                          │
+│  ed ingest threads --all                     │
+│  ed ingest canvas  <course_id>               │
+│  ed ingest lectures --course <id>            │
+└────────────────────┬─────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────┐
+│              CONTEXTUALIZE & INDEX           │
+│  ed contextualize                            │
+│  ed index                                    │
+└────────────────────┬─────────────────────────┘
+                     │
+                     ▼
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  ed ingest  │────▶│  ed answer   │────▶│  ed review  │
-│   threads   │     │  <thread_id> │     │   --list    │
-└─────────────┘     └──────────────┘     └──────┬──────┘
-                                                │
-                              ┌─────────────────▼──────────────────┐
-                              │  ed approve <id>  |  ed reject <id> │
-                              └─────────────────────────────────────┘
+│  ed answer  │────▶│  ed review   │────▶│  approve /  │
+│  <thread>   │     │    --list    │     │  reject     │
+└─────────────┘     └──────────────┘     └─────────────┘
 ```
 
-**1. Ingest** — pull all Ed threads for the current semester and store them as structured markdown:
+**1. Ingest** — pull threads, Canvas content, and lecture transcripts:
 
 ```bash
-ed ingest threads --semester fall2025
+ed ingest threads --all
+ed ingest canvas 498126
+ed ingest lectures --course 91346
 ```
 
-**2. Answer** — generate a draft for an unanswered thread. ed-bot retrieves relevant past threads, project materials, and lecture content, then calls Claude with the active style guide and guardrails:
+**2. Contextualize** — generate retrieval context for every file using Ollama:
+
+```bash
+ed contextualize
+```
+
+**3. Index** — load all content into the pyqmd vector store:
+
+```bash
+ed index
+```
+
+**4. Answer** — generate a draft for an unanswered thread:
 
 ```bash
 ed answer 98765
 # → Draft saved: a3f9c12b0011
 ```
 
-**3. Review** — inspect the highest-priority draft:
+**5. Review and approve** — inspect the draft and post to EdStem:
 
 ```bash
 ed review
-```
-
-**4. Approve** — post the draft to EdStem as a comment or answer:
-
-```bash
 ed review approve a3f9c12b0011 --as-answer
-```
-
-**5. Reject or Skip** — discard a bad draft or push it to the back of the queue:
-
-```bash
-ed review reject a3f9c12b0011 --reason "Guardrail violation"
-ed review skip   a3f9c12b0011
 ```
 
 ## Next Steps

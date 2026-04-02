@@ -28,16 +28,20 @@ ed ingest threads [OPTIONS]
 | `--semester TEXT` | Semester name (e.g. `fall2025`) |
 | `--course INT` | Course ID (overrides config) |
 | `--all` | Ingest all semesters in config |
+| `--force` | Re-download all threads, ignoring last-sync timestamp |
 | `--json` | JSON output |
 
 **Examples:**
 
 ```bash
-# Ingest a specific semester
+# Ingest a specific semester (incremental)
 ed ingest threads --semester fall2025
 
 # Ingest all configured semesters
 ed ingest threads --all
+
+# Force re-download of all threads
+ed ingest threads --all --force
 
 # JSON output
 ed ingest threads --semester fall2025 --json
@@ -48,9 +52,64 @@ ed ingest threads --all --json
 # {"total": 689}
 ```
 
+### ed ingest canvas
+
+Pull project requirements, pages, and announcements from Canvas LMS.
+
+```bash
+ed ingest canvas COURSE_ID [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `COURSE_ID` | Canvas course ID |
+| `--list` | Preview available assignments without downloading |
+| `--filter TEXT` | Only ingest assignments whose name contains this string (default: `"Project"`) |
+| `--bot-dir PATH` | Override bot directory |
+
+**Examples:**
+
+```bash
+# Preview available assignments
+ed ingest canvas 498126 --list
+
+# Ingest project assignments (default filter: "Project")
+ed ingest canvas 498126
+
+# Ingest all assignments regardless of name
+ed ingest canvas 498126 --filter ""
+
+# Ingest only assignments matching a custom filter
+ed ingest canvas 498126 --filter "Indicator"
+```
+
+### ed ingest lectures
+
+Download Kaltura lecture videos, transcribe them, and generate indexed markdown.
+
+```bash
+ed ingest lectures [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--course INT` | Kaltura course ID |
+| `--force` | Re-ingest already-processed lectures |
+| `--bot-dir PATH` | Override bot directory |
+
+**Examples:**
+
+```bash
+# Ingest all lectures for a course
+ed ingest lectures --course 91346
+
+# Force re-download and re-transcription
+ed ingest lectures --course 91346 --force
+```
+
 ### ed ingest projects
 
-Ingest project PDFs or starter code.
+Ingest project PDFs or starter code (legacy — prefer `ed ingest canvas`).
 
 ```bash
 ed ingest projects PATH [OPTIONS]
@@ -79,6 +138,73 @@ ed ingest projects project1.pdf --json
 
 ---
 
+## ed contextualize
+
+Generate contextual retrieval context for knowledge base files using Ollama.
+
+```bash
+ed contextualize [SUBCOMMAND] [OPTIONS]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-d, --directory TEXT` | all | Process only this subdirectory (repeatable) |
+| `--force` | off | Regenerate already-processed files |
+| `--model TEXT` | `llama3.2` | Ollama model to use |
+| `-j, --concurrency INT` | `8` | Number of concurrent Ollama requests |
+| `--bot-dir PATH` | `~/.ed-bot` | Override bot directory |
+
+**Examples:**
+
+```bash
+# Contextualize all knowledge base files
+ed contextualize
+
+# Process specific directories only
+ed contextualize -d threads -d projects
+
+# Force regeneration
+ed contextualize --force
+
+# Use a different model
+ed contextualize --model llama3.1
+
+# Increase concurrency for faster processing
+ed contextualize -j 16
+
+# Check progress
+ed contextualize status
+```
+
+---
+
+## ed index
+
+Index all knowledge base content into the pyqmd vector store.
+
+```bash
+ed index [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Force re-index all collections |
+| `--bot-dir PATH` | Override bot directory |
+
+Indexes: threads (per semester), projects, lectures, Canvas pages, and announcements.
+
+**Examples:**
+
+```bash
+# Index all content
+ed index
+
+# Force re-index
+ed index --force
+```
+
+---
+
 ## ed status
 
 Show knowledge base and queue status.
@@ -95,13 +221,16 @@ ed status
 # ┌──────────────────────┬────────┐
 # │ Collection           │ Chunks │
 # ├──────────────────────┼────────┤
-# │ threads-fall2025     │ 1847   │
-# │ projects             │ 234    │
+# │ threads-fall2025     │ 8345   │
+# │ projects             │  234   │
+# │ lectures             │  333   │
+# │ canvas-pages         │   22   │
+# │ announcements        │   21   │
 # └──────────────────────┴────────┘
 # Drafts pending: 3
 
 ed status --json
-# {"course_id": 12345, "collections": {"threads-fall2025": {"chunk_count": 1847}}, "drafts_pending": 3}
+# {"course_id": 12345, "collections": {"threads-fall2025": {"chunk_count": 8345}}, "drafts_pending": 3}
 ```
 
 ---

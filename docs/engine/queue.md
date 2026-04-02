@@ -116,6 +116,28 @@ ed answer <thread>
 }
 ```
 
+## Indexing content for the queue
+
+Before the answer engine can retrieve relevant context for drafts, all ingested content must be indexed. Run `ed index` after any ingestion step:
+
+```bash
+ed index
+```
+
+Force a full re-index of all collections:
+
+```bash
+ed index --force
+```
+
+`ed index` indexes:
+
+- Threads (one collection per semester, e.g. `threads-fall2025`)
+- Projects (Canvas requirements and PDF documents)
+- Lectures (transcripts)
+- Canvas pages
+- Announcements
+
 ## Queue inspection via CLI
 
 ```bash
