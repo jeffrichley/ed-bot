@@ -14,7 +14,7 @@ class KnowledgeBase:
         self.config = config
         self.qmd = PyQMD(data_dir=str(config.bot_dir / "pyqmd"))
 
-    def index_threads(self, semester: str, force: bool = False) -> int:
+    def index_threads(self, semester: str, force: bool = False, observer=None) -> int:
         """Index thread markdown files for a semester."""
         semester_dir = self.config.threads_dir / semester
         if not semester_dir.exists():
@@ -30,9 +30,9 @@ class KnowledgeBase:
         except ValueError:
             pass  # already exists
 
-        return self.qmd.index(collection_name, force=force)
+        return self.qmd.index(collection_name, force=force, observer=observer)
 
-    def index_projects(self, force: bool = False) -> int:
+    def index_projects(self, force: bool = False, observer=None) -> int:
         """Index project markdown files."""
         projects_dir = self.config.projects_dir
         if not projects_dir.exists():
@@ -47,9 +47,9 @@ class KnowledgeBase:
         except ValueError:
             pass
 
-        return self.qmd.index("projects", force=force)
+        return self.qmd.index("projects", force=force, observer=observer)
 
-    def index_lectures(self, force: bool = False) -> int:
+    def index_lectures(self, force: bool = False, observer=None) -> int:
         """Index lecture transcript markdown files."""
         lectures_dir = self.config.lectures_dir
         if not lectures_dir.exists():
@@ -64,9 +64,9 @@ class KnowledgeBase:
         except ValueError:
             pass
 
-        return self.qmd.index("lectures", force=force)
+        return self.qmd.index("lectures", force=force, observer=observer)
 
-    def index_canvas_pages(self, force: bool = False) -> int:
+    def index_canvas_pages(self, force: bool = False, observer=None) -> int:
         """Index Canvas course pages."""
         pages_dir = self.config.canvas_pages_dir
         if not pages_dir.exists():
@@ -81,9 +81,9 @@ class KnowledgeBase:
         except ValueError:
             pass
 
-        return self.qmd.index("canvas-pages", force=force)
+        return self.qmd.index("canvas-pages", force=force, observer=observer)
 
-    def index_announcements(self, force: bool = False) -> int:
+    def index_announcements(self, force: bool = False, observer=None) -> int:
         """Index Canvas announcements."""
         ann_dir = self.config.canvas_announcements_dir
         if not ann_dir.exists():
@@ -98,39 +98,33 @@ class KnowledgeBase:
         except ValueError:
             pass
 
-        return self.qmd.index("announcements", force=force)
+        return self.qmd.index("announcements", force=force, observer=observer)
 
     def index_all(self, force: bool = False) -> dict[str, int]:
         """Index everything. Returns dict of collection_name -> chunk_count."""
-        from rich.console import Console
-        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-        console = Console()
+        from pyqmd.progress import RichProgressObserver
 
         results = {}
+        observer = RichProgressObserver()
 
         # Thread semesters
         if self.config.threads_dir.exists():
             for semester_dir in sorted(self.config.threads_dir.iterdir()):
                 if semester_dir.is_dir():
                     name = semester_dir.name
-                    console.print(f"  Indexing threads-{name}...")
-                    results[f"threads-{name}"] = self.index_threads(name, force=force)
+                    results[f"threads-{name}"] = self.index_threads(name, force=force, observer=observer)
 
         # Projects
-        console.print("  Indexing projects...")
-        results["projects"] = self.index_projects(force=force)
+        results["projects"] = self.index_projects(force=force, observer=observer)
 
         # Lectures
-        console.print("  Indexing lectures...")
-        results["lectures"] = self.index_lectures(force=force)
+        results["lectures"] = self.index_lectures(force=force, observer=observer)
 
         # Canvas pages
-        console.print("  Indexing canvas-pages...")
-        results["canvas-pages"] = self.index_canvas_pages(force=force)
+        results["canvas-pages"] = self.index_canvas_pages(force=force, observer=observer)
 
         # Announcements
-        console.print("  Indexing announcements...")
-        results["announcements"] = self.index_announcements(force=force)
+        results["announcements"] = self.index_announcements(force=force, observer=observer)
 
         return results
 
