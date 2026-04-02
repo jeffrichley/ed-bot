@@ -68,10 +68,16 @@ def backup(
     ) as progress:
         task = progress.add_task("Creating backup", total=len(all_files))
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        # Already-compressed formats — store without compression to avoid wasting CPU
+        STORE_EXTENSIONS = {".mp4", ".mkv", ".webm", ".zip", ".gz", ".png", ".jpg", ".jpeg"}
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
             for f in all_files:
                 rel_path = f.relative_to(bot_path)
-                zf.write(f, arcname=str(rel_path))
+                if f.suffix.lower() in STORE_EXTENSIONS:
+                    zf.write(f, arcname=str(rel_path), compress_type=zipfile.ZIP_STORED)
+                else:
+                    zf.write(f, arcname=str(rel_path), compress_type=zipfile.ZIP_DEFLATED, compresslevel=4)
                 progress.advance(task)
 
     zip_size_mb = zip_path.stat().st_size / (1024 * 1024)
