@@ -8,8 +8,9 @@ import tempfile
 import typer
 from rich.console import Console
 
-app = typer.Typer(help="Review draft answers.")
+app = typer.Typer(help="Review draft answers.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -42,7 +43,7 @@ def review(
     if list_all:
         drafts = queue.list(project=project, status=status, question_type=question_type)
         if json_output:
-            print(json.dumps([
+            typer.echo(json.dumps([
                 {"draft_id": d.draft_id, "thread_id": d.thread_id,
                  "thread_number": d.thread_number, "title": d.thread_title,
                  "priority": d.priority, "project": d.project,
@@ -65,7 +66,7 @@ def review(
         return
 
     if json_output:
-        print(json.dumps({
+        typer.echo(json.dumps({
             "draft_id": draft.draft_id,
             "thread_id": draft.thread_id,
             "thread_number": draft.thread_number,
@@ -110,7 +111,7 @@ def approve(
     draft = queue.get(draft_id)
 
     if not draft:
-        console.print(f"[red]Draft {draft_id} not found.[/red]")
+        err_console.print(f"[red]Draft {draft_id} not found.[/red]")
         raise typer.Exit(1)
 
     client = EdClient(region=config.region)
@@ -125,7 +126,7 @@ def approve(
     queue.remove(draft_id)
 
     if json_output:
-        print(json.dumps({"status": action, "draft_id": draft_id, "thread_id": draft.thread_id}))
+        typer.echo(json.dumps({"status": action, "draft_id": draft_id, "thread_id": draft.thread_id}))
     else:
         console.print(f"[green]Draft {draft_id} {action} on thread {draft.thread_id}.[/green]")
 

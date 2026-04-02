@@ -3,10 +3,10 @@
 import json
 import typer
 from rich.console import Console
-from rich.table import Table
 
-app = typer.Typer(help="Generate search context for knowledge base files via Ollama.")
+app = typer.Typer(help="Generate search context for knowledge base files via Ollama.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -43,8 +43,9 @@ def contextualize(
     results = generator.run(subdirs=subdirs, force=force)
 
     if json_output:
-        print(json.dumps(results))
+        typer.echo(json.dumps(results))
     else:
+        from rich.table import Table
         table = Table(title="Context Generation Results")
         table.add_column("Metric")
         table.add_column("Count", justify="right")
@@ -73,8 +74,9 @@ def status(
 
     info = generator.status()
     if json_output:
-        print(json.dumps(info))
+        typer.echo(json.dumps(info))
     else:
+        from rich.table import Table
         table = Table(title="Context Generation Status")
         table.add_column("Metric")
         table.add_column("Value")

@@ -4,10 +4,10 @@ import json
 import pathlib
 import typer
 from rich.console import Console
-from rich.table import Table
 
-app = typer.Typer(help="Forum and knowledge base status.")
+app = typer.Typer(help="Forum and knowledge base status.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -35,12 +35,13 @@ def status(
     drafts = queue.list()
 
     if json_output:
-        print(json.dumps({
+        typer.echo(json.dumps({
             "course_id": config.course_id,
             "collections": kb_status,
             "drafts_pending": len(drafts),
         }, default=str))
     else:
+        from rich.table import Table
         console.print(f"[bold]Course: {config.course_id}[/bold]")
         table = Table()
         table.add_column("Collection")

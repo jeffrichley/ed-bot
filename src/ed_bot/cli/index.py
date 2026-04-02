@@ -3,10 +3,10 @@
 import json
 import typer
 from rich.console import Console
-from rich.table import Table
 
-app = typer.Typer(help="Index ingested content into the knowledge base.")
+app = typer.Typer(help="Index ingested content into the knowledge base.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -33,8 +33,9 @@ def index(
     results = kb.index_all(force=force)
 
     if json_output:
-        print(json.dumps(results))
+        typer.echo(json.dumps(results))
     else:
+        from rich.table import Table
         table = Table(title="Indexing Results")
         table.add_column("Collection")
         table.add_column("Chunks Indexed", justify="right")

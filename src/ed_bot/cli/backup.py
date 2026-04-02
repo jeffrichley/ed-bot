@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn
 
-app = typer.Typer(help="Backup the ed-bot data directory.")
+app = typer.Typer(help="Backup the ed-bot data directory.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -28,7 +28,7 @@ def backup(
     """Create a backup of the entire ed-bot data directory."""
     bot_path = _get_bot_dir(bot_dir)
     if not bot_path.exists():
-        console.print(f"[red]Bot directory not found: {bot_path}[/red]")
+        err_console.print(f"[red]Bot directory not found: {bot_path}[/red]")
         raise typer.Exit(1)
 
     # Determine output path
@@ -57,6 +57,7 @@ def backup(
     console.print(f"[bold]Backing up {len(all_files)} files ({total_mb:.0f} MB)...[/bold]")
 
     # Create zip with progress
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -76,7 +77,7 @@ def backup(
     zip_size_mb = zip_path.stat().st_size / (1024 * 1024)
 
     if json_output:
-        print(json.dumps({
+        typer.echo(json.dumps({
             "path": str(zip_path),
             "files": len(all_files),
             "original_size_mb": round(total_mb, 1),
@@ -109,7 +110,7 @@ def list_backups(
         return
 
     if json_output:
-        print(json.dumps([
+        typer.echo(json.dumps([
             {"path": str(z), "size_mb": round(z.stat().st_size / (1024 * 1024), 1),
              "created": datetime.fromtimestamp(z.stat().st_mtime).isoformat()}
             for z in zips

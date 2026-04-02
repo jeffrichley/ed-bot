@@ -7,8 +7,9 @@ import subprocess
 import typer
 from rich.console import Console
 
-app = typer.Typer(help="Manage project guardrails.")
+app = typer.Typer(help="Manage project guardrails.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -30,7 +31,7 @@ def list_guardrails(
     manager = GuardrailsManager(config.guardrails_dir)
     names = manager.list()
     if json_output:
-        print(json.dumps(names))
+        typer.echo(json.dumps(names))
     else:
         for name in names:
             console.print(f"  {name}")

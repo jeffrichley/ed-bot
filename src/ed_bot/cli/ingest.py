@@ -5,8 +5,9 @@ import pathlib
 import typer
 from rich.console import Console
 
-app = typer.Typer(help="Ingest content into the knowledge base.")
+app = typer.Typer(help="Ingest content into the knowledge base.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -41,7 +42,7 @@ def threads(
             if not json_output:
                 console.print(f"  {sem['name']}: {count} threads")
         if json_output:
-            print(json.dumps({"total": total}))
+            typer.echo(json.dumps({"total": total}))
         else:
             console.print(f"[green]Total: {total} threads ingested.[/green]")
     else:
@@ -49,7 +50,7 @@ def threads(
         sem = semester or (config.semesters[0]["name"] if config.semesters else "default")
         count = ingester.ingest(cid, sem, force=force)
         if json_output:
-            print(json.dumps({"semester": sem, "count": count}))
+            typer.echo(json.dumps({"semester": sem, "count": count}))
         else:
             console.print(f"[green]Ingested {count} threads for {sem}.[/green]")
 
@@ -78,7 +79,7 @@ def projects(
         count = ingester.ingest_code(file_path, project_name)
 
     if json_output:
-        print(json.dumps({"project": project_name, "count": count}))
+        typer.echo(json.dumps({"project": project_name, "count": count}))
     else:
         console.print(f"[green]Ingested {count} files for {project_name}.[/green]")
 
@@ -103,7 +104,7 @@ def canvas(
         if filter_prefix:
             assignments = [a for a in assignments if a["name"].startswith(filter_prefix)]
         if json_output:
-            print(json.dumps(assignments))
+            typer.echo(json.dumps(assignments))
         else:
             from rich.table import Table
             table = Table(title=f"Assignments in Canvas course {canvas_course_id}")
@@ -119,7 +120,7 @@ def canvas(
     prefix = filter_prefix if filter_prefix else None
     count = ingester.ingest_assignments(canvas_course_id, filter_prefix=prefix)
     if json_output:
-        print(json.dumps({"count": count}))
+        typer.echo(json.dumps({"count": count}))
     else:
         console.print(f"[green]Ingested {count} assignments from Canvas.[/green]")
 
@@ -147,8 +148,8 @@ def lectures(
     try:
         video_slides = client.lessons.video_slides(cid)
     except Exception as e:
-        console.print(f"[red]Failed to fetch lessons: {e}[/red]")
-        console.print("[dim]The lessons API may not be available yet.[/dim]")
+        err_console.print(f"[red]Failed to fetch lessons: {e}[/red]")
+        err_console.print("[dim]The lessons API may not be available yet.[/dim]")
         raise typer.Exit(1)
 
     if lesson:
@@ -174,6 +175,6 @@ def lectures(
         total += count
 
     if json_output:
-        print(json.dumps({"count": total}))
+        typer.echo(json.dumps({"count": total}))
     else:
         console.print(f"[green]Ingested {total} lecture videos.[/green]")

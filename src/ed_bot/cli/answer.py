@@ -5,8 +5,9 @@ import pathlib
 import typer
 from rich.console import Console
 
-app = typer.Typer(help="Draft answer for a specific thread.")
+app = typer.Typer(help="Draft answer for a specific thread.", rich_markup_mode="rich")
 console = Console()
+err_console = Console(stderr=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
@@ -28,7 +29,7 @@ def answer(
         return
 
     if thread_ref is None:
-        console.print("[red]Error: THREAD_REF is required.[/red]")
+        err_console.print("[red]Error: THREAD_REF is required.[/red]")
         raise typer.Exit(1)
 
     from ed_api import EdClient
@@ -103,7 +104,7 @@ def answer(
     draft_id = queue.add(draft)
 
     if json_output:
-        print(json.dumps({
+        typer.echo(json.dumps({
             "draft_id": draft_id,
             "thread_id": thread.id,
             "thread_number": thread.number,
