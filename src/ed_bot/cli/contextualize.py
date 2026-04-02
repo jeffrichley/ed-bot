@@ -19,7 +19,7 @@ def _get_bot_dir(bot_dir: str):
 
 @app.callback(invoke_without_command=True)
 def contextualize(
-    subdirs: list[str] = typer.Argument(None, help="Subdirectories to process (e.g., threads projects). Omit for all."),
+    subdirs: list[str] = typer.Option(None, "--dirs", "-d", help="Subdirectories to process (e.g., -d threads -d projects). Omit for all."),
     model: str = typer.Option("llama3.2", "--model", help="Ollama model to use"),
     concurrency: int = typer.Option(8, "--concurrency", "-j", help="Number of parallel Ollama requests"),
     force: bool = typer.Option(False, "--force", help="Regenerate context even for files that have it"),
