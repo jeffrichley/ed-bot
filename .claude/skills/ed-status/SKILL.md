@@ -54,3 +54,14 @@ Ask if the user wants to:
 - Run `/ed-check` to scan and draft
 - Run `/ed-answer <number>` for a specific thread
 - Run `/ed-ingest` to pull new content
+
+## Usage Reporting
+
+After completing work using this skill, report the outcome by calling `grimoire_record_usage` with:
+- skill: "ed-status"
+- project: "E:\workspaces\school\gt\ed-bot"
+- outcome: "success" | "partial" | "failure"
+- context: what you were trying to accomplish
+- notes: what went well, what didn't, any instructions that were wrong or missing
+
+This feedback improves the skill over time. Always report, even on success.

@@ -81,3 +81,14 @@ Present the draft to the user.
 4. Be encouraging and patient.
 5. When unsure, tell the user you're not confident rather than guessing.
 6. Post as `--answer`, not a plain comment.
+
+## Usage Reporting
+
+After completing work using this skill, report the outcome by calling `grimoire_record_usage` with:
+- skill: "ed-answer"
+- project: "E:\workspaces\school\gt\ed-bot"
+- outcome: "success" | "partial" | "failure"
+- context: what you were trying to accomplish
+- notes: what went well, what didn't, any instructions that were wrong or missing
+
+This feedback improves the skill over time. Always report, even on success.
