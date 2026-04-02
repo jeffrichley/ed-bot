@@ -38,7 +38,7 @@ class ContextGenerator:
         self,
         knowledge_dir: pathlib.Path,
         state_dir: pathlib.Path,
-        model: str = "qwen3.5:9b",
+        model: str = "llama3.2",
         ollama_url: str = "http://localhost:11434",
     ):
         self.knowledge_dir = pathlib.Path(knowledge_dir)
@@ -69,9 +69,7 @@ class ContextGenerator:
 
     def _mark_completed(self, rel_path: str):
         self._state["completed_files"].append(rel_path)
-        # Save every 10 files for efficiency
-        if len(self._state["completed_files"]) % 10 == 0:
-            self._save_state()
+        self._save_state()
 
     def _has_context(self, file_path: pathlib.Path) -> bool:
         """Check if file already has context in frontmatter."""
@@ -129,18 +127,33 @@ class ContextGenerator:
                     "stream": False,
                     "options": {
                         "temperature": 0.3,
-                        "num_predict": 100,
+                        "num_predict": 500,  # enough for thinking + response
                     },
                 },
             )
             response.raise_for_status()
-            result = response.json().get("response", "").strip()
-            # Clean thinking tags (qwen3 sometimes adds these)
+            data = response.json()
+            # Some models (qwen3.5) use a "thinking" field, others use "response"
+            result = data.get("response", "").strip()
+            if not result:
+                # Try extracting from thinking field
+                thinking = data.get("thinking", "")
+                if thinking:
+                    # The actual answer may be after the thinking, or be the last paragraph
+                    # Try to find content after common patterns
+                    result = thinking.strip()
+            # Clean thinking tags
             if "<think>" in result:
                 result = re.sub(
                     r"<think>.*?</think>", "", result, flags=re.DOTALL
                 ).strip()
-            # Clean up quotes if the model wraps in them
+            # If still has thinking content, take the last sentence/paragraph as the answer
+            if result and len(result) > 300:
+                # Likely still has thinking preamble — take last 1-2 sentences
+                sentences = [s.strip() for s in result.split(".") if s.strip()]
+                if len(sentences) > 2:
+                    result = ". ".join(sentences[-2:]) + "."
+            # Clean up quotes
             result = result.strip('"').strip("'")
             return result
         except Exception as e:

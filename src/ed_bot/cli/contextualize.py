@@ -20,7 +20,7 @@ def _get_bot_dir(bot_dir: str):
 @app.callback(invoke_without_command=True)
 def contextualize(
     subdirs: list[str] = typer.Argument(None, help="Subdirectories to process (e.g., threads projects). Omit for all."),
-    model: str = typer.Option("qwen3.5:9b", "--model", help="Ollama model to use"),
+    model: str = typer.Option("llama3.2", "--model", help="Ollama model to use"),
     force: bool = typer.Option(False, "--force", help="Regenerate context even for files that have it"),
     json_output: bool = typer.Option(False, "--json"),
     bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
