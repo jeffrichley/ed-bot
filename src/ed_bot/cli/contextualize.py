@@ -21,6 +21,7 @@ def _get_bot_dir(bot_dir: str):
 def contextualize(
     subdirs: list[str] = typer.Argument(None, help="Subdirectories to process (e.g., threads projects). Omit for all."),
     model: str = typer.Option("llama3.2", "--model", help="Ollama model to use"),
+    concurrency: int = typer.Option(8, "--concurrency", "-j", help="Number of parallel Ollama requests"),
     force: bool = typer.Option(False, "--force", help="Regenerate context even for files that have it"),
     json_output: bool = typer.Option(False, "--json"),
     bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
@@ -36,6 +37,7 @@ def contextualize(
         knowledge_dir=pathlib.Path(config.data_dir),
         state_dir=config.state_dir,
         model=model,
+        concurrency=concurrency,
     )
 
     results = generator.run(subdirs=subdirs, force=force)
