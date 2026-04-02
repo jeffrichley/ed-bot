@@ -21,7 +21,7 @@ Fetch recent threads and identify which need attention.
 
 ```bash
 cd E:\workspaces\school\gt\ed
-ed-api threads list 91346 --no-pinned --limit 50 --json
+ed-api --quiet threads list 91346 --no-pinned --limit 50 --json
 ```
 
 For each thread in the results, classify its status:
@@ -31,13 +31,13 @@ For each thread in the results, classify its status:
 
 For threads needing attention, fetch the full detail:
 ```bash
-ed-api threads get 91346:<thread_number> --json
+ed-api --quiet threads get 91346:<thread_number> --json
 ```
 
 Read the question and any existing comments. Classify each:
 - **Question type:** logistics, setup, conceptual, project_help, teaching_moment, integrity_risk
 - **Confidence level:**
-  - Search the knowledge base: `qmd search "<thread title and key phrases>" --data-dir ~/.ed-bot/pyqmd --json --top-k 5`
+  - Search the knowledge base: `qmd --quiet search "<thread title and key phrases>" --data-dir ~/.ed-bot/pyqmd --json --top-k 5`
   - HIGH: found similar past threads with staff answers
   - MEDIUM: found related content but no direct match
   - LOW: no relevant results
@@ -110,7 +110,7 @@ Present the draft clearly.
 ### Step 6: User decision
 - **User approves** → Post it:
   ```bash
-  ed-api comments post <thread_id> --body "<the answer>" --answer
+  ed-api --quiet comments post <thread_id> --body "<the answer>" --answer
   ```
   Then show the report list again (minus the completed thread).
 

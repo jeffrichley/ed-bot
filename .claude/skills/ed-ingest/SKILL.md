@@ -29,10 +29,10 @@ Canvas course ID 498126 = CS7646 SP26.
 ## Step 3: Re-index
 
 ```bash
-ed index
+ed --quiet index
 ```
 
-This re-indexes only changed files (incremental). Use `ed index --force` for a full rebuild.
+This re-indexes only changed files (incremental). Use `ed --quiet index --force` for a full rebuild.
 
 ## Step 4: Report
 

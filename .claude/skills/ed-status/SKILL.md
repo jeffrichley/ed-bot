@@ -11,7 +11,7 @@ Quick overview of the forum and knowledge base. No drafting, no posting.
 
 ```bash
 cd E:\workspaces\school\gt\ed
-ed-api threads list 91346 --no-pinned --limit 100 --json
+ed-api --quiet threads list 91346 --no-pinned --limit 100 --json
 ```
 
 Count:
@@ -23,7 +23,7 @@ Count:
 ## Step 2: Knowledge base stats
 
 ```bash
-ed status --json
+ed --quiet status --json
 ```
 
 Show collection chunk counts.
