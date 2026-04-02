@@ -10,6 +10,7 @@ from ed_bot.cli.review import app as review_app
 from ed_bot.cli.answer import app as answer_app
 from ed_bot.cli.guardrails_cmd import app as guardrails_app
 from ed_bot.cli.contextualize import app as contextualize_app
+from ed_bot.cli.backup import app as backup_app
 
 app = typer.Typer(name="ed", help="EdStem forum automation.")
 
@@ -20,6 +21,7 @@ app.add_typer(review_app, name="review")
 app.add_typer(answer_app, name="answer")
 app.add_typer(guardrails_app, name="guardrails")
 app.add_typer(contextualize_app, name="contextualize", invoke_without_command=True)
+app.add_typer(backup_app, name="backup", invoke_without_command=True)
 
 DEFAULT_BOT_DIR = "~/.ed-bot"
 
