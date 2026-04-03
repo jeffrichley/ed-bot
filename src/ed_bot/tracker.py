@@ -82,6 +82,14 @@ class ThreadTracker:
         )
         self._conn.commit()
 
+    def get_stats(self) -> dict:
+        """Return summary counts for tracked threads."""
+        total = self._conn.execute("SELECT COUNT(*) FROM threads").fetchone()[0]
+        answered = self._conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE our_answer_id IS NOT NULL"
+        ).fetchone()[0]
+        return {"total_tracked": total, "answered_by_us": answered}
+
     def upsert_from_list(self, threads: list[dict]) -> list[dict]:
         """Upsert a batch of threads and return those that need attention.
 

@@ -136,6 +136,28 @@ class TestThreadTracker:
         finally:
             tracker.close()
 
+    def test_get_stats(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        tracker = ThreadTracker(db_path)
+        try:
+            thread_100 = {
+                "thread_id": 100, "thread_number": 1, "title": "Thread A",
+                "category": "General", "updated_at": "2026-04-01T10:00:00Z",
+                "reply_count": 0, "is_answered": False,
+            }
+            thread_200 = {
+                "thread_id": 200, "thread_number": 2, "title": "Thread B",
+                "category": "General", "updated_at": "2026-04-01T11:00:00Z",
+                "reply_count": 0, "is_answered": False,
+            }
+            tracker.upsert_from_list([thread_100, thread_200])
+            tracker.record_answer(100, comment_id=99999)
+            stats = tracker.get_stats()
+            assert stats["total_tracked"] == 2
+            assert stats["answered_by_us"] == 1
+        finally:
+            tracker.close()
+
     def test_updated_since_answered(self, tmp_bot_dir):
         db_path = tmp_bot_dir / "state" / "tracker.db"
         tracker = ThreadTracker(db_path)
