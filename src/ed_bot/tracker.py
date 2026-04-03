@@ -55,6 +55,12 @@ class ThreadTracker:
     def close(self) -> None:
         self._conn.close()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -90,7 +96,6 @@ class ThreadTracker:
                     "UPDATE threads SET is_answered = :ans, last_checked_at = :now WHERE thread_id = :tid",
                     {"ans": int(t["is_answered"]), "now": now, "tid": t["thread_id"]},
                 )
-                self._conn.commit()
                 continue
             elif row["our_answer_id"] is not None:
                 tracker_status = "updated_since_answered"
@@ -112,8 +117,8 @@ class ThreadTracker:
                     "status": tracker_status,
                 },
             )
-            self._conn.commit()
 
             changed.append({**t, "tracker_status": tracker_status})
 
+        self._conn.commit()
         return changed
