@@ -105,6 +105,7 @@ def approve(
     from ed_api import EdClient
     from ed_bot.config import BotConfig
     from ed_bot.queue.manager import DraftQueue
+    from ed_bot.tracker import ThreadTracker
 
     config = BotConfig.load(_get_bot_dir(bot_dir))
     queue = DraftQueue(config.drafts_dir)
@@ -120,8 +121,12 @@ def approve(
         client.threads.endorse(draft.thread_id)
         action = "endorsed"
     else:
-        client.comments.post(draft.thread_id, draft.content, is_answer=as_answer)
+        comment = client.comments.post(draft.thread_id, draft.content, is_answer=as_answer)
         action = "posted as answer" if as_answer else "posted"
+
+        tracker = ThreadTracker(config.state_dir / "tracker.db")
+        tracker.record_answer(draft.thread_id, comment.id)
+        tracker.close()
 
     queue.remove(draft_id)
 
