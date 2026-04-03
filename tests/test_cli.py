@@ -65,3 +65,12 @@ class TestCLIHelp:
         runner = CliRunner()
         result = runner.invoke(app, ["answer", "--help"])
         assert result.exit_code == 0
+
+    def test_review_scan_help(self):
+        from typer.testing import CliRunner
+        from ed_bot.cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["review", "scan", "--help"])
+        assert result.exit_code == 0
+        assert "Scan for new or updated threads" in result.output

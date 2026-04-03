@@ -163,3 +163,53 @@ def skip(
         draft.priority = "low"
         queue.update(draft)
     console.print(f"Draft {draft_id} skipped.")
+
+
+@app.command()
+def scan(
+    limit: int = typer.Option(50, "--limit", help="Number of threads to fetch"),
+    json_output: bool = typer.Option(False, "--json"),
+    bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
+):
+    """Scan for new or updated threads since last check."""
+    from ed_api import EdClient
+    from ed_bot.config import BotConfig
+    from ed_bot.tracker import ThreadTracker
+
+    config = BotConfig.load(_get_bot_dir(bot_dir))
+    client = EdClient(region=config.region)
+    tracker = ThreadTracker(config.state_dir / "tracker.db")
+
+    api_threads = client.threads.list(config.course_id, limit=limit)
+
+    thread_dicts = [
+        {
+            "thread_id": t.id,
+            "thread_number": t.number,
+            "title": t.title,
+            "category": t.category,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else "",
+            "reply_count": t.reply_count,
+            "is_answered": t.is_answered,
+        }
+        for t in api_threads
+        if not t.is_pinned
+    ]
+
+    changed = tracker.upsert_from_list(thread_dicts)
+    tracker.close()
+
+    if json_output:
+        typer.echo(json.dumps(changed))
+    else:
+        if not changed:
+            console.print("No new or updated threads.")
+        else:
+            for t in changed:
+                status_icon = {"new": "🆕", "updated": "🔄", "updated_since_answered": "⚠️"}.get(
+                    t["tracker_status"], "?"
+                )
+                console.print(
+                    f"  {status_icon} #{t['thread_number']} {t['title']} [{t['tracker_status']}]"
+                )
+            console.print(f"\n{len(changed)} thread(s) need attention.")
