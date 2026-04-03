@@ -78,3 +78,24 @@ The `/ed-answer` skill workflow is unchanged — it calls `ed-api comments post 
 - DB file auto-created on first use with `CREATE TABLE IF NOT EXISTS`.
 - The tracker module should be a standalone class (e.g., `ed_bot.tracker.ThreadTracker`) with methods: `upsert_from_list()`, `mark_checked()`, `record_answer()`, `get_changed()`.
 - The `ed review scan` command instantiates the tracker, calls `EdClient.threads.list()`, runs `upsert_from_list()`, then calls `get_changed()` and outputs the result.
+
+## Skill updates required
+
+The following Claude Code skills must be updated to use the new tracker-aware CLI:
+
+### `/ed-check` (`.claude/skills/ed-check/SKILL.md`)
+- **Phase 1** changes: replace `ed-api --quiet threads list 91346 --no-pinned --limit 50 --json` with `ed review scan --json`
+- The scan output already filters to only changed/new threads — no need to check `is_answered` or `reply_count` manually
+- Add a new classification category for `updated_since_answered` threads: "Has new activity since we answered"
+- Update the report format to show tracker status (new vs. updated vs. follow-up on our answer)
+
+### `/ed-answer` (`.claude/skills/ed-answer/SKILL.md`)
+- No change to the drafting workflow
+- The `ed-api comments post --answer` call remains the same — the CLI records `our_answer_id` as a side effect
+
+### `/ed-status` (`.claude/skills/ed-status/SKILL.md`)
+- Add tracker stats to the dashboard: threads we've answered, threads with pending follow-ups
+- Could use a new command like `ed review stats --json` to get counts from the tracker DB
+
+### `/ed-ingest` (`.claude/skills/ed-ingest/SKILL.md`)
+- No changes needed — ingestion uses `last-sync.json` which is a separate concern from the tracker
