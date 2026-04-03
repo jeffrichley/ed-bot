@@ -175,3 +175,58 @@ class TestThreadTracker:
             assert result[0]["tracker_status"] == "updated_since_answered"
         finally:
             tracker.close()
+
+
+class TestTrackerLifecycle:
+    """Integration test for the full scan → check → answer → rescan cycle."""
+
+    def test_full_lifecycle(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        tracker = ThreadTracker(db_path)
+
+        # First scan: thread is new
+        threads_v1 = [
+            {
+                "thread_id": 100,
+                "thread_number": 1,
+                "title": "How does MACD work?",
+                "category": "Project 8 | Strategy Evaluation >",
+                "updated_at": "2026-04-01T10:00:00Z",
+                "reply_count": 0,
+                "is_answered": False,
+            }
+        ]
+        changed = tracker.upsert_from_list(threads_v1)
+        assert len(changed) == 1
+        assert changed[0]["tracker_status"] == "new"
+
+        # Mark as checked (we fetched full detail)
+        tracker.mark_checked(100)
+
+        # We post an answer
+        tracker.record_answer(100, comment_id=55555)
+
+        # Second scan: same updated_at, nothing changed
+        changed = tracker.upsert_from_list(threads_v1)
+        assert len(changed) == 0
+
+        # Third scan: student replied (updated_at moved)
+        threads_v2 = [
+            {
+                "thread_id": 100,
+                "thread_number": 1,
+                "title": "How does MACD work?",
+                "category": "Project 8 | Strategy Evaluation >",
+                "updated_at": "2026-04-02T15:30:00Z",
+                "reply_count": 2,
+                "is_answered": True,
+            }
+        ]
+        changed = tracker.upsert_from_list(threads_v2)
+        assert len(changed) == 1
+        assert changed[0]["tracker_status"] == "updated_since_answered"
+
+        # Stats reflect our answer
+        stats = tracker.get_stats()
+        assert stats["answered_by_us"] == 1
+        assert stats["total_tracked"] == 1
