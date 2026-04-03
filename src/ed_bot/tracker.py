@@ -65,6 +65,23 @@ class ThreadTracker:
     # Public API
     # ------------------------------------------------------------------
 
+    def mark_checked(self, thread_id: int) -> None:
+        """Update last_checked_at to current UTC time for the given thread."""
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "UPDATE threads SET last_checked_at = :now WHERE thread_id = :tid",
+            {"now": now, "tid": thread_id},
+        )
+        self._conn.commit()
+
+    def record_answer(self, thread_id: int, comment_id: int) -> None:
+        """Record that we posted an answer to the given thread."""
+        self._conn.execute(
+            "UPDATE threads SET our_answer_id = :cid, status = 'answered' WHERE thread_id = :tid",
+            {"cid": comment_id, "tid": thread_id},
+        )
+        self._conn.commit()
+
     def upsert_from_list(self, threads: list[dict]) -> list[dict]:
         """Upsert a batch of threads and return those that need attention.
 

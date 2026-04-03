@@ -98,3 +98,58 @@ class TestThreadTracker:
             assert result[0]["tracker_status"] == "updated_since_answered"
         finally:
             tracker.close()
+
+    def test_mark_checked(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        tracker = ThreadTracker(db_path)
+        try:
+            thread = {
+                "thread_id": 100, "thread_number": 1, "title": "Test",
+                "category": "General", "updated_at": "2026-04-01T10:00:00Z",
+                "reply_count": 0, "is_answered": False,
+            }
+            tracker.upsert_from_list([thread])
+            tracker.mark_checked(100)
+            row = tracker._conn.execute(
+                "SELECT last_checked_at FROM threads WHERE thread_id = 100"
+            ).fetchone()
+            assert row["last_checked_at"] is not None
+        finally:
+            tracker.close()
+
+    def test_record_answer(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        tracker = ThreadTracker(db_path)
+        try:
+            thread = {
+                "thread_id": 100, "thread_number": 1, "title": "Test",
+                "category": "General", "updated_at": "2026-04-01T10:00:00Z",
+                "reply_count": 0, "is_answered": False,
+            }
+            tracker.upsert_from_list([thread])
+            tracker.record_answer(100, comment_id=99999)
+            row = tracker._conn.execute(
+                "SELECT our_answer_id, status FROM threads WHERE thread_id = 100"
+            ).fetchone()
+            assert row["our_answer_id"] == 99999
+            assert row["status"] == "answered"
+        finally:
+            tracker.close()
+
+    def test_updated_since_answered(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        tracker = ThreadTracker(db_path)
+        try:
+            thread = {
+                "thread_id": 100, "thread_number": 1, "title": "Test",
+                "category": "General", "updated_at": "2026-04-01T10:00:00Z",
+                "reply_count": 0, "is_answered": False,
+            }
+            tracker.upsert_from_list([thread])
+            tracker.record_answer(100, comment_id=99999)
+            thread["updated_at"] = "2026-04-02T10:00:00Z"
+            result = tracker.upsert_from_list([thread])
+            assert len(result) == 1
+            assert result[0]["tracker_status"] == "updated_since_answered"
+        finally:
+            tracker.close()
