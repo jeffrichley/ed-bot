@@ -17,19 +17,21 @@ All commands run from the `E:\workspaces\school\gt\ed` directory (where the `.en
 
 ## Phase 1: Scan the Forum
 
-Fetch recent threads and identify which need attention.
+Fetch threads with new activity since last check.
 
 ```bash
 cd E:\workspaces\school\gt\ed
-ed-api --quiet threads list 91346 --no-pinned --limit 50 --json
+ed review scan --limit 50 --json
 ```
 
-For each thread in the results, classify its status:
-- **Needs attention** if: `is_answered` is false, OR `reply_count` is 0
-- **Student-only** if: has replies but no staff answer (check by fetching the full thread)
-- **Skip** if: `is_answered` is true AND has staff response
+This returns ONLY threads that have changed since last check:
+- `tracker_status: "new"` — never seen before
+- `tracker_status: "updated"` — `updated_at` moved since last seen
+- `tracker_status: "updated_since_answered"` — we posted an answer but the thread has new activity (follow-up question)
 
-For threads needing attention, fetch the full detail:
+If the result is empty (`[]`), the forum is caught up — report that and offer next actions.
+
+For each returned thread, fetch the full detail:
 ```bash
 ed-api --quiet threads get 91346:<thread_number> --json
 ```
@@ -64,6 +66,9 @@ X threads need attention:
 
 ⚠️ #1758 "Exam probability" — LOW CONFIDENCE
    Reason: exam-specific, limited knowledge base coverage
+
+🔁 #1765 "Manual Strategy - Performance Table" — FOLLOW-UP
+   We answered this thread but it has new activity. Check what changed.
 
 ❌ #1710 "Academic misconduct" — SKIP
    Reason: integrity issue
@@ -110,7 +115,7 @@ Present the draft clearly.
 ### Step 6: User decision
 - **User approves** → Post it:
   ```bash
-  ed-api --quiet comments post <thread_id> --body "<the answer>" --answer
+  ed-api comments post <thread_id> --body "<the answer>" --answer
   ```
   Then show the report list again (minus the completed thread).
 

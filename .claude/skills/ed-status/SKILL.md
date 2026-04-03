@@ -11,7 +11,7 @@ Quick overview of the forum and knowledge base. No drafting, no posting.
 
 ```bash
 cd E:\workspaces\school\gt\ed
-ed-api --quiet threads list 91346 --no-pinned --limit 100 --json
+ed-api threads list 91346 --no-pinned --limit 100 --json
 ```
 
 Count:
@@ -23,10 +23,19 @@ Count:
 ## Step 2: Knowledge base stats
 
 ```bash
-ed --quiet status --json
+ed status --json
 ```
 
 Show collection chunk counts.
+
+## Step 2b: Tracker activity
+
+```bash
+cd E:\workspaces\school\gt\ed
+ed review scan --limit 100 --json
+```
+
+Count threads by `tracker_status`: new, updated, updated_since_answered.
 
 ## Step 3: Present dashboard
 
@@ -34,10 +43,10 @@ Show collection chunk counts.
 EdStem Dashboard — CS 7646 Spring 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Forum:
-  Unanswered:     X threads
-  Student-only:   X threads  
-  Active today:   X threads
+Activity Since Last Check:
+  New threads:      X
+  Updated:          X
+  Follow-ups:       X (threads we answered with new activity)
 
 Knowledge Base:
   Threads:   38,837 chunks (5 semesters)
