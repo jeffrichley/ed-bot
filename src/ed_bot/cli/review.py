@@ -22,7 +22,7 @@ def _get_bot_dir(bot_dir: str) -> pathlib.Path:
 @app.callback(invoke_without_command=True)
 def review(
     ctx: typer.Context,
-    draft_id: str = typer.Argument(None, help="Draft ID to review"),
+    draft_id: str = typer.Option(None, "--id", help="Draft ID to review"),
     list_all: bool = typer.Option(False, "--list", help="List all drafts"),
     project: str = typer.Option(None, "--project", help="Filter by project"),
     status: str = typer.Option(None, "--status", help="Filter by status"),
