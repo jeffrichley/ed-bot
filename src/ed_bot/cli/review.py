@@ -173,6 +173,7 @@ def skip(
 @app.command()
 def scan(
     limit: int = typer.Option(50, "--limit", help="Number of threads to fetch"),
+    seed: bool = typer.Option(False, "--seed", help="Seed the DB with all threads (paginates through entire forum)"),
     json_output: bool = typer.Option(False, "--json"),
     bot_dir: str = typer.Option(DEFAULT_BOT_DIR, "--bot-dir"),
 ):
@@ -185,7 +186,11 @@ def scan(
     client = EdClient(region=config.region)
     tracker = ThreadTracker(config.state_dir / "tracker.db")
 
-    api_threads = client.threads.list(config.course_id, limit=limit)
+    if seed:
+        api_threads = list(client.threads.list_all(config.course_id))
+        console.print(f"Fetched {len(api_threads)} threads from EdStem.")
+    else:
+        api_threads = client.threads.list(config.course_id, limit=limit)
 
     thread_dicts = [
         {
@@ -203,6 +208,10 @@ def scan(
 
     changed = tracker.upsert_from_list(thread_dicts)
     tracker.close()
+
+    if seed:
+        console.print(f"Seeded tracker DB with {len(thread_dicts)} threads.")
+        return
 
     if json_output:
         typer.echo(json.dumps(changed))
