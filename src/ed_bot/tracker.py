@@ -29,7 +29,7 @@ INSERT INTO threads (
 ) VALUES (
     :thread_id, :thread_number, :title, :category,
     :updated_at, :now,
-    :reply_count, :is_answered, 'new'
+    :reply_count, :is_answered, :status
 )
 ON CONFLICT(thread_id) DO UPDATE SET
     title                = excluded.title,
@@ -37,7 +37,8 @@ ON CONFLICT(thread_id) DO UPDATE SET
     last_seen_updated_at = excluded.last_seen_updated_at,
     last_checked_at      = excluded.last_checked_at,
     reply_count_seen     = excluded.reply_count_seen,
-    is_answered          = excluded.is_answered;
+    is_answered          = excluded.is_answered,
+    status               = excluded.status;
 """
 
 
@@ -108,6 +109,7 @@ class ThreadTracker:
                     "now": now,
                     "reply_count": t["reply_count"],
                     "is_answered": int(t["is_answered"]),
+                    "status": tracker_status,
                 },
             )
             self._conn.commit()
