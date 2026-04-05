@@ -109,7 +109,7 @@ class ThreadTracker:
         for t in threads:
             # Look up existing row
             row = self._conn.execute(
-                "SELECT last_seen_updated_at, our_answer_id FROM threads WHERE thread_id = :tid",
+                "SELECT last_seen_updated_at, our_answer_id, reply_count_seen FROM threads WHERE thread_id = :tid",
                 {"tid": t["thread_id"]},
             ).fetchone()
 
@@ -143,7 +143,14 @@ class ThreadTracker:
                 },
             )
 
-            changed.append({**t, "tracker_status": tracker_status})
+            reply_count_increased = (
+                row is not None and t["reply_count"] > row["reply_count_seen"]
+            )
+            changed.append({
+                **t,
+                "tracker_status": tracker_status,
+                "reply_count_increased": reply_count_increased,
+            })
 
         self._conn.commit()
         return changed

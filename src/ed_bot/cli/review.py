@@ -170,6 +170,29 @@ def skip(
     console.print(f"Draft {draft_id} skipped.")
 
 
+def _has_unanswered_followup(thread_detail) -> bool:
+    """Check if any reply chain in the thread ends with a non-staff comment."""
+    def _check_replies(comment, users) -> bool:
+        if not comment.replies:
+            return False
+        for reply in comment.replies:
+            author = users.get(reply.user_id)
+            is_staff = author and author.is_staff if author else False
+            # If this reply has its own replies, recurse
+            if reply.replies:
+                if _check_replies(reply, users):
+                    return True
+            # Leaf reply from a student = unanswered follow-up
+            elif not is_staff:
+                return True
+        return False
+
+    for comment in thread_detail.comments:
+        if _check_replies(comment, thread_detail.users):
+            return True
+    return False
+
+
 @app.command()
 def scan(
     limit: int = typer.Option(50, "--limit", help="Number of threads to fetch"),
@@ -207,23 +230,47 @@ def scan(
     ]
 
     changed = tracker.upsert_from_list(thread_dicts)
-    tracker.close()
 
     if seed:
+        tracker.close()
         console.print(f"Seeded tracker DB with {len(thread_dicts)} threads.")
         return
 
+    # For updated threads with increased reply counts, check for unanswered follow-ups
+    for t in changed:
+        if not t.get("reply_count_increased"):
+            continue
+        if t["tracker_status"] == "new":
+            continue  # new threads don't need follow-up checks
+
+        try:
+            detail = client.threads.get(t["thread_id"])
+            if _has_unanswered_followup(detail):
+                t["tracker_status"] = "needs_followup"
+        except Exception:
+            pass  # if fetch fails, keep existing status
+
+    # Filter out updated threads that are just timestamp bumps (no new replies, already answered)
+    actionable = [
+        t for t in changed
+        if t["tracker_status"] != "updated" or not t["is_answered"]
+    ]
+
+    tracker.close()
+
     if json_output:
-        typer.echo(json.dumps(changed))
+        typer.echo(json.dumps(actionable))
     else:
-        if not changed:
+        if not actionable:
             console.print("No new or updated threads.")
         else:
-            for t in changed:
-                status_icon = {"new": "🆕", "updated": "🔄", "updated_since_answered": "⚠️"}.get(
-                    t["tracker_status"], "?"
-                )
+            for t in actionable:
+                status_icon = {
+                    "new": "🆕", "updated": "🔄",
+                    "updated_since_answered": "⚠️",
+                    "needs_followup": "🔁",
+                }.get(t["tracker_status"], "?")
                 console.print(
                     f"  {status_icon} #{t['thread_number']} {t['title']} [{t['tracker_status']}]"
                 )
-            console.print(f"\n{len(changed)} thread(s) need attention.")
+            console.print(f"\n{len(actionable)} thread(s) need attention.")

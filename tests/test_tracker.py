@@ -177,6 +177,109 @@ class TestThreadTracker:
             tracker.close()
 
 
+class TestReplyCountIncreased:
+    """Tests for reply_count_increased flag in upsert results."""
+
+    def test_new_thread_has_no_reply_count_increased(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        with ThreadTracker(db_path) as tracker:
+            result = tracker.upsert_from_list([_make_thread(reply_count=3)])
+            assert result[0]["reply_count_increased"] is False
+
+    def test_reply_count_increased_when_higher(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        with ThreadTracker(db_path) as tracker:
+            tracker.upsert_from_list([_make_thread(reply_count=1)])
+            result = tracker.upsert_from_list([
+                _make_thread(updated_at="2026-03-31T00:00:00Z", reply_count=3)
+            ])
+            assert result[0]["reply_count_increased"] is True
+
+    def test_reply_count_not_increased_when_same(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        with ThreadTracker(db_path) as tracker:
+            tracker.upsert_from_list([_make_thread(reply_count=2)])
+            result = tracker.upsert_from_list([
+                _make_thread(updated_at="2026-03-31T00:00:00Z", reply_count=2)
+            ])
+            assert result[0]["reply_count_increased"] is False
+
+
+class TestHasUnansweredFollowup:
+    """Tests for _has_unanswered_followup in review CLI."""
+
+    def _make_user(self, user_id, role="student"):
+        from unittest.mock import MagicMock
+        user = MagicMock()
+        user.id = user_id
+        user.is_staff = role in ("staff", "admin")
+        user.role = role
+        return user
+
+    def _make_comment(self, comment_id, user_id, replies=None):
+        from unittest.mock import MagicMock
+        c = MagicMock()
+        c.id = comment_id
+        c.user_id = user_id
+        c.replies = replies or []
+        return c
+
+    def test_no_replies_no_followup(self):
+        from ed_bot.cli.review import _has_unanswered_followup
+        from unittest.mock import MagicMock
+
+        thread = MagicMock()
+        thread.comments = [self._make_comment(1, 100)]
+        thread.users = {100: self._make_user(100, "staff")}
+        assert _has_unanswered_followup(thread) is False
+
+    def test_student_reply_is_unanswered(self):
+        from ed_bot.cli.review import _has_unanswered_followup
+        from unittest.mock import MagicMock
+
+        student_reply = self._make_comment(2, 200)
+        staff_answer = self._make_comment(1, 100, replies=[student_reply])
+        thread = MagicMock()
+        thread.comments = [staff_answer]
+        thread.users = {
+            100: self._make_user(100, "staff"),
+            200: self._make_user(200, "student"),
+        }
+        assert _has_unanswered_followup(thread) is True
+
+    def test_staff_reply_to_student_is_resolved(self):
+        from ed_bot.cli.review import _has_unanswered_followup
+        from unittest.mock import MagicMock
+
+        staff_reply = self._make_comment(3, 100)
+        student_reply = self._make_comment(2, 200, replies=[staff_reply])
+        staff_answer = self._make_comment(1, 100, replies=[student_reply])
+        thread = MagicMock()
+        thread.comments = [staff_answer]
+        thread.users = {
+            100: self._make_user(100, "staff"),
+            200: self._make_user(200, "student"),
+        }
+        assert _has_unanswered_followup(thread) is False
+
+    def test_nested_student_followup_after_staff_reply(self):
+        from ed_bot.cli.review import _has_unanswered_followup
+        from unittest.mock import MagicMock
+
+        # staff answer -> student reply -> staff reply -> student follow-up (unanswered)
+        student_followup = self._make_comment(4, 200)
+        staff_reply = self._make_comment(3, 100, replies=[student_followup])
+        student_reply = self._make_comment(2, 200, replies=[staff_reply])
+        staff_answer = self._make_comment(1, 100, replies=[student_reply])
+        thread = MagicMock()
+        thread.comments = [staff_answer]
+        thread.users = {
+            100: self._make_user(100, "staff"),
+            200: self._make_user(200, "student"),
+        }
+        assert _has_unanswered_followup(thread) is True
+
+
 class TestTrackerLifecycle:
     """Integration test for the full scan → check → answer → rescan cycle."""
 
