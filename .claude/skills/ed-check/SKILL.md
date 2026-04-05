@@ -113,10 +113,19 @@ Write the answer following the style guide and guardrails. Reference specific co
 Present the draft clearly.
 
 ### Step 6: User decision
-- **User approves** → Post it:
+- **User approves** → Post it using the correct command based on context:
+
+  **New answer on a thread** (responding to the original question):
   ```bash
-  ed-api comments post <thread_id> --body "<the answer>" --answer
+  ed-api --quiet comments post <thread_id> --body "<the answer>" --answer
   ```
+
+  **Reply to a nested comment** (responding to a follow-up on an existing answer):
+  ```bash
+  ed-api --quiet comments reply <comment_id> --body "<the reply>"
+  ```
+  Use `reply` when the student posted a follow-up as a nested reply to an existing answer/comment. The `<comment_id>` is the ID of the comment you're responding to (visible in the thread detail JSON under `replies`).
+
   Then show the report list again (minus the completed thread).
 
 - **User edits** → They provide feedback ("make it more Socratic", "add a reference to lecture 3"). Revise the draft and present again.
@@ -133,7 +142,8 @@ Present the draft clearly.
 4. **Be encouraging.** These are grad students who are often stressed.
 5. **When unsure, say so.** Flag the thread as NEEDS HUMAN rather than guessing.
 6. **Private threads stay private.** Don't reference private thread content in public answers.
-7. **Post as answer, not comment** — use the `--answer` flag so it shows as an answer on EdStem.
+7. **Post as answer, not comment** — use the `--answer` flag for new answers on threads. Use `comments reply` for responding to nested follow-ups.
+8. **Check for nested replies** — when reviewing a thread with `tracker_status: "updated"`, look at the `replies` field inside each comment to find follow-up questions that need attention.
 
 ## Usage Reporting
 
