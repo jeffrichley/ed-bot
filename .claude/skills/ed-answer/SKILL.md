@@ -17,7 +17,7 @@ All commands run from `E:\workspaces\school\gt\ed` directory.
 
 ```bash
 cd E:\workspaces\school\gt\ed
-ed-api --quiet threads get 91346:<thread_number> --json
+ed-api threads get 91346:<thread_number> --json
 ```
 
 Display the full question and any existing comments to the user.
@@ -27,7 +27,7 @@ Display the full question and any existing comments to the user.
 Extract key phrases from the question and search:
 
 ```bash
-qmd --quiet search "<thread title + key concepts>" --data-dir ~/.ed-bot/pyqmd --json --top-k 10
+qmd search "<thread title + key concepts>" --data-dir ~/.ed-bot/pyqmd --json --top-k 10
 ```
 
 Show the user what context was found (top 3-5 results summarized).
@@ -68,7 +68,7 @@ Present the draft to the user.
 
 - **Approves** → Post:
   ```bash
-  ed-api --quiet comments post <thread_id> --body "<answer>" --answer
+  ed-api comments post <thread_id> --body "<answer>" --answer
   ```
 - **Edits** → Revise based on feedback, present again
 - **Rejects** → Discard, exit

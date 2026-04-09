@@ -126,6 +126,12 @@ Present the draft clearly.
   ```
   Use `reply` when the student posted a follow-up as a nested reply to an existing answer/comment. The `<comment_id>` is the ID of the comment you're responding to (visible in the thread detail JSON under `replies`).
 
+  **After posting, mark the thread as resolved** by accepting the comment:
+  ```bash
+  ed-api --quiet comments accept <comment_id>
+  ```
+  Use the comment ID returned from the post/reply command. This checks the "resolved" checkmark on EdStem.
+
   Then show the report list again (minus the completed thread).
 
 - **User edits** → They provide feedback ("make it more Socratic", "add a reference to lecture 3"). Revise the draft and present again.
