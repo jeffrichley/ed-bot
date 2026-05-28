@@ -31,21 +31,29 @@ def poll(
         kind = decision.kind
         thread_id = t["thread_id"]
         event_at = t["updated_at"]
+        reply_count = int(t.get("reply_count", 0) or 0)
 
         if not store.is_new_event(thread_id, kind, event_at):
             continue
 
         if kind == "silent":
-            store.record(thread_id, "silent", event_at)
+            store.record(thread_id, "silent", event_at, reply_count)
             continue
 
-        # Re-emit guard: if we've previously alerted on this thread for the
-        # same kind, only fire again if there's been non-staff activity since
-        # our last alert. Staff replies = the thread is being handled.
+        # Re-emit guards (only apply when we've already alerted on this thread
+        # with the same kind — first-time alerts always fire).
         prev = store.get(thread_id)
         if prev is not None and prev["last_alert_kind"] == kind:
+            prev_reply_count = int(prev.get("last_reply_count") or 0)
+            # 1. Reply count hasn't grown — nothing meaningful happened.
+            #    updated_at can tick for edits/votes/etc. without new replies.
+            if reply_count <= prev_reply_count:
+                store.record(thread_id, "silent", event_at, reply_count)
+                continue
+            # 2. Replies grew, but only staff has touched the thread since
+            #    our last alert — it's being handled, stay silent.
             if not t.get("has_non_staff_activity_since_alert", True):
-                store.record(thread_id, "silent", event_at)
+                store.record(thread_id, "silent", event_at, reply_count)
                 continue
 
         # Actionable: play sound + emit JSON + record.
@@ -58,4 +66,4 @@ def poll(
             category=t["category"],
             url=f"https://edstem.org/us/courses/{course_id}/discussion/{thread_id}",
         )
-        store.record(thread_id, kind, event_at)
+        store.record(thread_id, kind, event_at, reply_count)

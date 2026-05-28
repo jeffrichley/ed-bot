@@ -77,12 +77,12 @@ def test_poll_does_not_re_emit_same_event(store, sound_files, capsys):
     assert play.call_count == 1  # only the first poll
 
 
-def test_poll_re_emits_when_event_at_changes(store, sound_files, capsys):
-    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z")
-    fetch = MagicMock(side_effect=[
-        [t1],
-        [mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z")],
-    ])
+def test_poll_re_emits_when_replies_grow_and_non_staff(store, sound_files, capsys):
+    """updated_at change alone is no longer sufficient — reply count must grow."""
+    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z", reply_count=0)
+    t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z", reply_count=1)
+    t2["has_non_staff_activity_since_alert"] = True
+    fetch = MagicMock(side_effect=[[t1], [t2]])
     play = MagicMock()
     poll(course_id=98559, fetch=fetch, store=store, play=play, sound_files=sound_files)
     capsys.readouterr()
@@ -90,6 +90,19 @@ def test_poll_re_emits_when_event_at_changes(store, sound_files, capsys):
     second = capsys.readouterr().out
     assert json.loads(second.strip())["kind"] == "new_thread"
     assert play.call_count == 2
+
+
+def test_poll_silences_reemit_when_reply_count_unchanged(store, sound_files, capsys):
+    """Reply count steady = no substantive change, regardless of updated_at."""
+    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z", reply_count=3)
+    t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z", reply_count=3)
+    fetch = MagicMock(side_effect=[[t1], [t2]])
+    play = MagicMock()
+    poll(course_id=98559, fetch=fetch, store=store, play=play, sound_files=sound_files)
+    capsys.readouterr()
+    poll(course_id=98559, fetch=fetch, store=store, play=play, sound_files=sound_files)
+    assert capsys.readouterr().out == ""
+    assert play.call_count == 1  # only first alert fired
 
 
 def test_poll_emits_escalation_sound(store, sound_files, capsys):
@@ -113,15 +126,15 @@ def test_poll_includes_url_in_emission(store, sound_files, capsys):
 def test_poll_silences_reemit_when_only_staff_activity(store, sound_files, capsys):
     # Step 1: first alert lands.
     t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z",
-                   title="Medical Emergency URGENT")
+                   title="Medical Emergency URGENT", reply_count=1)
     poll(course_id=98559, fetch=lambda _: [t1], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
     capsys.readouterr()
 
-    # Step 2: same thread, updated_at moved, but the fetch reports only
-    # staff has been active since our last alert.
+    # Step 2: reply count grew (so the reply-dedup gate opens), but the
+    # fetch reports only staff has been active since our last alert.
     t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z",
-                   title="Medical Emergency URGENT")
+                   title="Medical Emergency URGENT", reply_count=2)
     t2["has_non_staff_activity_since_alert"] = False
     poll(course_id=98559, fetch=lambda _: [t2], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
@@ -131,14 +144,15 @@ def test_poll_silences_reemit_when_only_staff_activity(store, sound_files, capsy
 def test_poll_reemits_when_non_staff_activity_since_alert(store, sound_files, capsys):
     # Step 1: first alert lands.
     t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z",
-                   title="Medical Emergency URGENT")
+                   title="Medical Emergency URGENT", reply_count=0)
     poll(course_id=98559, fetch=lambda _: [t1], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
     capsys.readouterr()
 
-    # Step 2: a student followed up on the emergency thread.
+    # Step 2: a student followed up — reply_count grew AND the activity is
+    # from a non-staff user.
     t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z",
-                   title="Medical Emergency URGENT")
+                   title="Medical Emergency URGENT", reply_count=1)
     t2["has_non_staff_activity_since_alert"] = True
     poll(course_id=98559, fetch=lambda _: [t2], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
@@ -147,16 +161,16 @@ def test_poll_reemits_when_non_staff_activity_since_alert(store, sound_files, ca
     assert json.loads(second)["kind"] == "escalation"
 
 
-def test_poll_reemits_when_field_absent_safe_default(store, sound_files, capsys):
-    # When the fetch didn't enrich the thread dict (no detail-fetch), default
-    # is True (alert).
-    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z")
+def test_poll_silent_when_only_updated_at_ticks_no_replies(store, sound_files, capsys):
+    """Regression: EdStem ticks updated_at without new replies; we must not
+    re-alert. Reply-count dedup short-circuits before the staff filter."""
+    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z", reply_count=0)
     poll(course_id=98559, fetch=lambda _: [t1], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
     capsys.readouterr()
 
-    t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z")
-    # Note: no has_non_staff_activity_since_alert key set
+    # Same reply_count, different updated_at, no enrichment fields at all.
+    t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z", reply_count=0)
     poll(course_id=98559, fetch=lambda _: [t2], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
-    assert capsys.readouterr().out != ""
+    assert capsys.readouterr().out == ""

@@ -59,6 +59,46 @@ def test_db_parent_dir_is_created(tmp_path):
         s.close()
 
 
+def test_record_persists_reply_count(store):
+    store.record(123, "new_thread", "2026-05-28T10:00:00Z", reply_count=7)
+    row = store.get(123)
+    assert row["last_reply_count"] == 7
+
+
+def test_record_default_reply_count_zero(store):
+    store.record(123, "new_thread", "2026-05-28T10:00:00Z")
+    assert store.get(123)["last_reply_count"] == 0
+
+
+def test_migration_adds_last_reply_count_to_old_db(tmp_path):
+    """Existing DBs predate the column. Migration must add it."""
+    import sqlite3
+    db = tmp_path / "tracker.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    # Simulate the old schema explicitly (no last_reply_count column).
+    conn = sqlite3.connect(str(db))
+    conn.execute("""CREATE TABLE watch_alerts (
+        thread_id INTEGER PRIMARY KEY,
+        last_alert_kind TEXT NOT NULL,
+        last_alert_at TEXT NOT NULL,
+        last_event_at TEXT NOT NULL
+    )""")
+    conn.execute("INSERT INTO watch_alerts VALUES (1, 'new_thread', 't', 't')")
+    conn.commit()
+    conn.close()
+
+    # Opening via WatchAlertStore should add the column transparently.
+    s = WatchAlertStore(db)
+    try:
+        row = s.get(1)
+        assert row["last_reply_count"] == 0  # default for backfilled rows
+        # And new records work normally.
+        s.record(2, "new_thread", "2026-05-28T10:00:00Z", reply_count=5)
+        assert s.get(2)["last_reply_count"] == 5
+    finally:
+        s.close()
+
+
 def test_usable_from_worker_thread(tmp_path):
     """APScheduler dispatches polls on worker threads; SQLite must allow it.
 
