@@ -6,7 +6,8 @@ import os
 import pathlib
 import signal
 import sys
-from typing import Callable
+from datetime import datetime
+from typing import Callable, Optional
 
 import typer
 from ed_bot.watch import config as wconfig
@@ -14,6 +15,31 @@ from ed_bot.watch.poll import poll as run_poll
 from ed_bot.watch.runner import build_scheduler, run
 from ed_bot.watch.sound import play
 from ed_bot.watch.state import WatchAlertStore
+
+
+def _as_datetime(value) -> Optional[datetime]:
+    """Coerce a timestamp value (str or datetime) into a tz-aware datetime.
+
+    The ed-api SDK hands back datetime objects for comment timestamps, while
+    our watch_alerts table stores ISO strings. Comparing the two directly
+    raises TypeError on Python's datetime, so callers normalize both sides
+    here before comparing.
+
+    Returns None when the value can't be parsed.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        s = value
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            return None
+    return None
 
 log = logging.getLogger(__name__)
 
@@ -33,26 +59,29 @@ def _load(config_path: pathlib.Path):
     return wconfig.load(config_path, ed_bot_dir=_ed_bot_package_dir())
 
 
-def _has_non_staff_activity_since(detail, since_ts: str) -> bool:
+def _has_non_staff_activity_since(detail, since_ts) -> bool:
     """Walk replies and look for a non-staff comment posted after since_ts.
 
     Used to decide whether to re-emit an already-alerted thread: if only
     staff has been active since our last alert, the situation is being
     handled and we stay silent.
+
+    Accepts since_ts as either an ISO string or a datetime.
     """
-    if not since_ts:
+    since = _as_datetime(since_ts)
+    if since is None:
         return True  # no anchor to compare against — be safe, alert
     staff_roles = {"admin", "staff", "instructor", "ta"}
     comments = getattr(detail, "comments", None) or []
     for c in comments:
         is_staff = getattr(c, "user_role", "") in staff_roles
-        created = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
-        if not is_staff and created and created > since_ts:
+        created = _as_datetime(getattr(c, "created_at", None) or getattr(c, "updated_at", None))
+        if not is_staff and created is not None and created > since:
             return True
         for r in getattr(c, "replies", None) or []:
             r_is_staff = getattr(r, "user_role", "") in staff_roles
-            r_created = getattr(r, "created_at", None) or getattr(r, "updated_at", None)
-            if not r_is_staff and r_created and r_created > since_ts:
+            r_created = _as_datetime(getattr(r, "created_at", None) or getattr(r, "updated_at", None))
+            if not r_is_staff and r_created is not None and r_created > since:
                 return True
     return False
 
@@ -86,7 +115,9 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
         for c in comments:
             cid = getattr(c, "id", None)
             if cid == our_answer_id:
-                our_answer_time = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
+                our_answer_time = _as_datetime(
+                    getattr(c, "created_at", None) or getattr(c, "updated_at", None)
+                )
                 break
         if our_answer_time is None:
             return False
@@ -94,14 +125,14 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
             if getattr(c, "id", None) == our_answer_id:
                 continue
             is_staff = getattr(c, "user_role", "") in {"admin", "staff", "instructor", "ta"}
-            created = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
-            if not is_staff and created and created > our_answer_time:
+            created = _as_datetime(getattr(c, "created_at", None) or getattr(c, "updated_at", None))
+            if not is_staff and created is not None and created > our_answer_time:
                 return True
             # Walk nested replies
             for r in getattr(c, "replies", None) or []:
                 r_is_staff = getattr(r, "user_role", "") in {"admin", "staff", "instructor", "ta"}
-                r_created = getattr(r, "created_at", None) or getattr(r, "updated_at", None)
-                if not r_is_staff and r_created and r_created > our_answer_time:
+                r_created = _as_datetime(getattr(r, "created_at", None) or getattr(r, "updated_at", None))
+                if not r_is_staff and r_created is not None and r_created > our_answer_time:
                     return True
         return False
 
