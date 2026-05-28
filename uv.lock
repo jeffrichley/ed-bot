@@ -840,7 +840,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
-    { name = "apscheduler", specifier = ">=3.10.0" },
+    { name = "apscheduler", specifier = ">=3.10.0,<4.0" },
     { name = "ed-api", editable = "../ed-api" },
     { name = "faster-whisper", specifier = ">=1.0.0" },
     { name = "faster-whisper", marker = "extra == 'lectures'", specifier = ">=1.0.0" },
