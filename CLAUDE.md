@@ -38,3 +38,13 @@ E:\workspaces\school\gt\ed
 3. Follow the style guide for tone (Socratic for conceptual, direct for logistics, etc.)
 4. Post answers with `--answer` flag, not as plain comments
 5. When unsure, flag for human review rather than guessing
+
+## Troubleshooting
+
+If `ed` crashes with `ModuleNotFoundError` (e.g. `No module named 'tomli_w'`),
+the global `uv tool` snapshot is stale relative to the workspace source.
+Refresh it:
+
+```
+uv tool install --reinstall E:\workspaces\school\gt\ed-bot
+```
