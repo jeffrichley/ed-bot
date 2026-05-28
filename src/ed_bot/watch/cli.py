@@ -6,7 +6,7 @@ import os
 import pathlib
 import signal
 import sys
-from typing import Callable, Optional
+from typing import Callable
 
 import typer
 from ed_bot.watch import config as wconfig
@@ -90,8 +90,6 @@ def main(
     ctx: typer.Context,
     config_path: pathlib.Path = typer.Option(DEFAULT_CONFIG, "--config", "-c"),
     once: bool = typer.Option(False, "--once", help="Run one poll and exit."),
-    interval: Optional[str] = typer.Option(None, "--interval",
-        help="Override schedule with a flat interval (e.g. 2m)."),
 ):
     """Start the watcher (default). Subcommands: status, stop."""
     if ctx.invoked_subcommand is not None:
