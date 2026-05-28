@@ -34,24 +34,80 @@ def _load(config_path: pathlib.Path):
 
 
 def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) -> Callable[[], None]:
-    """Returns a no-arg callable suitable for the scheduler."""
+    """Returns a no-arg callable suitable for the scheduler.
+
+    Cross-references the existing /ed-check tracker (`threads` table in the
+    same DB file as watch_alerts) to populate `our_answer_id` and detect
+    follow-ups on our answers. Only does a detail-fetch for threads where
+    both (a) we've previously answered and (b) the reply count has grown
+    since the last /ed-check scan — keeps API cost bounded.
+    """
     from ed_api import EdClient
-    client = EdClient.from_env()
+    import sqlite3
+    client = EdClient()
+
+    def _tracker_lookup(conn: sqlite3.Connection, thread_id: int) -> tuple[int | None, int]:
+        row = conn.execute(
+            "SELECT our_answer_id, reply_count_seen FROM threads WHERE thread_id = ?",
+            (thread_id,),
+        ).fetchone()
+        if row is None:
+            return None, 0
+        return row[0], row[1] or 0
+
+    def _has_student_followup(detail, our_answer_id: int) -> bool:
+        """Walk replies and look for a non-staff comment posted after our answer."""
+        comments = getattr(detail, "comments", None) or []
+        our_answer_time = None
+        for c in comments:
+            cid = getattr(c, "id", None)
+            if cid == our_answer_id:
+                our_answer_time = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
+                break
+        if our_answer_time is None:
+            return False
+        for c in comments:
+            if getattr(c, "id", None) == our_answer_id:
+                continue
+            is_staff = getattr(c, "user_role", "") in {"admin", "staff", "instructor", "ta"}
+            created = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
+            if not is_staff and created and created > our_answer_time:
+                return True
+            # Walk nested replies
+            for r in getattr(c, "replies", None) or []:
+                r_is_staff = getattr(r, "user_role", "") in {"admin", "staff", "instructor", "ta"}
+                r_created = getattr(r, "created_at", None) or getattr(r, "updated_at", None)
+                if not r_is_staff and r_created and r_created > our_answer_time:
+                    return True
+        return False
 
     def fetch(cid: int) -> list[dict]:
         threads = client.threads.list(cid, limit=100)
-        return [
-            {
-                "thread_id": t.id, "number": t.number, "title": t.title,
-                "category": t.category or "", "is_answered": t.is_answered,
-                "is_pinned": t.is_pinned, "reply_count": t.reply_count,
-                "updated_at": getattr(t, "updated_at", "") or "",
-                "body": "",  # list view doesn't include body; classify still works
-                "our_answer_id": None,
-                "has_unanswered_followup": False,
-            }
-            for t in threads
-        ]
+        # Open the shared tracker DB (read-only is sufficient).
+        tracker_path = pathlib.Path("~/.ed-bot/state/tracker.db").expanduser()
+        results = []
+        with sqlite3.connect(str(tracker_path)) as conn:
+            for t in threads:
+                our_answer_id, reply_count_seen = _tracker_lookup(conn, t.id)
+                # Cheap heuristic: only detail-fetch when we answered AND replies grew.
+                has_followup = False
+                if our_answer_id and t.reply_count > reply_count_seen:
+                    try:
+                        detail = client.threads.get(t.id)
+                        has_followup = _has_student_followup(detail, our_answer_id)
+                    except Exception as e:
+                        log.warning("Followup detail-fetch failed for %d: %s", t.id, e)
+                        has_followup = True  # fail open — better to over-alert
+                results.append({
+                    "thread_id": t.id, "number": t.number, "title": t.title,
+                    "category": t.category or "", "is_answered": t.is_answered,
+                    "is_pinned": t.is_pinned, "reply_count": t.reply_count,
+                    "updated_at": getattr(t, "updated_at", "") or "",
+                    "body": "",
+                    "our_answer_id": our_answer_id,
+                    "has_unanswered_followup": has_followup,
+                })
+        return results
 
     def once() -> None:
         run_poll(course_id=course_id, fetch=fetch, store=store,
