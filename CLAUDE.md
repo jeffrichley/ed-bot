@@ -48,3 +48,16 @@ Refresh it:
 ```
 uv tool install --reinstall E:\workspaces\school\gt\ed-bot
 ```
+
+## Session start behavior
+
+When starting a Claude Code session in this project, proactively invoke
+`/ed-watch start` to launch the forum watcher in the background. Skip if:
+- The user explicitly says not to watch this session, OR
+- The user is opening the project for unrelated work (e.g., debugging the
+  ingest pipeline), OR
+- `~/.ed-bot/config.yaml` has no `course_id` (between semesters).
+
+The watcher is silent on normal startup; it only alerts when an actionable
+event fires. Stopping is automatic when the Claude session ends, or manual
+via `/ed-watch stop`.

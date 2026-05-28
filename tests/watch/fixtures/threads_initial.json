@@ -1,0 +1,17 @@
+[
+  {"thread_id": 1001, "number": 100, "title": "Q2 expected value",
+   "category": "Project 1 | Martingale", "is_answered": false,
+   "is_pinned": false, "reply_count": 0,
+   "updated_at": "2026-05-28T10:00:00Z",
+   "body": "", "our_answer_id": null, "has_unanswered_followup": false},
+  {"thread_id": 1002, "number": 101, "title": "Medical Emergency URGENT",
+   "category": "Project 1 | Martingale", "is_answered": false,
+   "is_pinned": false, "reply_count": 0,
+   "updated_at": "2026-05-28T10:05:00Z",
+   "body": "", "our_answer_id": null, "has_unanswered_followup": false},
+  {"thread_id": 1003, "number": 102, "title": "Welcome",
+   "category": "Announcements", "is_answered": false,
+   "is_pinned": false, "reply_count": 0,
+   "updated_at": "2026-05-28T10:10:00Z",
+   "body": "", "our_answer_id": null, "has_unanswered_followup": false}
+]
