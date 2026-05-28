@@ -61,6 +61,41 @@ def test_stop_releases_pid_lock(tmp_path, monkeypatch):
     assert not pid_path.exists(), "PID file should be cleaned up after stop"
 
 
+def test_has_non_staff_activity_since_detects_student_reply():
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        MagicMock(id=1, user_role="staff",   created_at="2026-05-28T10:30:00Z", replies=[]),
+        MagicMock(id=2, user_role="student", created_at="2026-05-28T11:00:00Z", replies=[]),
+    ])
+    assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is True
+
+
+def test_has_non_staff_activity_since_silent_when_only_staff():
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        MagicMock(id=1, user_role="staff", created_at="2026-05-28T10:30:00Z", replies=[]),
+        MagicMock(id=2, user_role="admin", created_at="2026-05-28T11:00:00Z", replies=[]),
+    ])
+    assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is False
+
+
+def test_has_non_staff_activity_since_alerts_when_no_anchor():
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[])
+    # Safe default: alert when we have no comparison anchor.
+    assert _has_non_staff_activity_since(detail, "") is True
+
+
+def test_has_non_staff_activity_since_walks_nested_replies():
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        MagicMock(id=1, user_role="staff", created_at="2026-05-28T10:30:00Z",
+                  replies=[MagicMock(id=10, user_role="student",
+                                     created_at="2026-05-28T10:45:00Z")]),
+    ])
+    assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is True
+
+
 def test_build_poll_fn_uses_tracker_for_our_answer_id(tmp_path, monkeypatch):
     """End-to-end: when tracker DB has our_answer_id, classifier sees it."""
     import sqlite3

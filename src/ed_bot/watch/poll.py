@@ -39,6 +39,15 @@ def poll(
             store.record(thread_id, "silent", event_at)
             continue
 
+        # Re-emit guard: if we've previously alerted on this thread for the
+        # same kind, only fire again if there's been non-staff activity since
+        # our last alert. Staff replies = the thread is being handled.
+        prev = store.get(thread_id)
+        if prev is not None and prev["last_alert_kind"] == kind:
+            if not t.get("has_non_staff_activity_since_alert", True):
+                store.record(thread_id, "silent", event_at)
+                continue
+
         # Actionable: play sound + emit JSON + record.
         play(kind, sound_files)
         emit(

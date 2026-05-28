@@ -33,6 +33,30 @@ def _load(config_path: pathlib.Path):
     return wconfig.load(config_path, ed_bot_dir=_ed_bot_package_dir())
 
 
+def _has_non_staff_activity_since(detail, since_ts: str) -> bool:
+    """Walk replies and look for a non-staff comment posted after since_ts.
+
+    Used to decide whether to re-emit an already-alerted thread: if only
+    staff has been active since our last alert, the situation is being
+    handled and we stay silent.
+    """
+    if not since_ts:
+        return True  # no anchor to compare against — be safe, alert
+    staff_roles = {"admin", "staff", "instructor", "ta"}
+    comments = getattr(detail, "comments", None) or []
+    for c in comments:
+        is_staff = getattr(c, "user_role", "") in staff_roles
+        created = getattr(c, "created_at", None) or getattr(c, "updated_at", None)
+        if not is_staff and created and created > since_ts:
+            return True
+        for r in getattr(c, "replies", None) or []:
+            r_is_staff = getattr(r, "user_role", "") in staff_roles
+            r_created = getattr(r, "created_at", None) or getattr(r, "updated_at", None)
+            if not r_is_staff and r_created and r_created > since_ts:
+                return True
+    return False
+
+
 def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) -> Callable[[], None]:
     """Returns a no-arg callable suitable for the scheduler.
 
@@ -83,21 +107,48 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
 
     def fetch(cid: int) -> list[dict]:
         threads = client.threads.list(cid, limit=100)
-        # Open the shared tracker DB (read-only is sufficient).
         tracker_path = pathlib.Path("~/.ed-bot/state/tracker.db").expanduser()
         results = []
         with sqlite3.connect(str(tracker_path)) as conn:
             for t in threads:
                 our_answer_id, reply_count_seen = _tracker_lookup(conn, t.id)
-                # Cheap heuristic: only detail-fetch when we answered AND replies grew.
+
+                # NEW: look up watch_alerts to know if we've already alerted.
+                # watch_alerts may not exist in the tracker DB when the watcher
+                # has never run before (table lives in the same file in prod,
+                # but may be absent in tests or on first launch).
+                try:
+                    wa_row = conn.execute(
+                        "SELECT last_alert_kind, last_alert_at FROM watch_alerts WHERE thread_id = ?",
+                        (t.id,),
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    wa_row = None
+                prev_alert_kind = wa_row[0] if wa_row else None
+                prev_alert_at = wa_row[1] if wa_row else None
+
                 has_followup = False
-                if our_answer_id and t.reply_count > reply_count_seen:
+                has_non_staff_activity_since_alert = True  # safe default
+
+                # Decide whether to detail-fetch.
+                already_alerted = prev_alert_kind in {"new_thread", "followup", "escalation"}
+                replies_grew = t.reply_count > reply_count_seen
+                need_detail = replies_grew and (our_answer_id is not None or already_alerted)
+
+                if need_detail:
                     try:
                         detail = client.threads.get(t.id)
-                        has_followup = _has_student_followup(detail, our_answer_id)
+                        if our_answer_id:
+                            has_followup = _has_student_followup(detail, our_answer_id)
+                        if already_alerted and prev_alert_at:
+                            has_non_staff_activity_since_alert = _has_non_staff_activity_since(
+                                detail, prev_alert_at
+                            )
                     except Exception as e:
                         log.warning("Followup detail-fetch failed for %d: %s", t.id, e)
-                        has_followup = True  # fail open — better to over-alert
+                        has_followup = True  # fail open
+                        has_non_staff_activity_since_alert = True  # fail open
+
                 results.append({
                     "thread_id": t.id, "number": t.number, "title": t.title,
                     "category": t.category or "", "is_answered": t.is_answered,
@@ -106,6 +157,7 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
                     "body": "",
                     "our_answer_id": our_answer_id,
                     "has_unanswered_followup": has_followup,
+                    "has_non_staff_activity_since_alert": has_non_staff_activity_since_alert,
                 })
         return results
 
