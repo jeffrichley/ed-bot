@@ -143,6 +143,10 @@ def stop():
     pid = int(PID_FILE.read_text().strip() or "0")
     if pid and _pid_alive(pid):
         os.kill(pid, signal.SIGTERM)
+        # On Windows os.kill(SIGTERM) is TerminateProcess — a hard kill that
+        # skips the running watcher's finally cleanup. Clean up the PID file
+        # from this side so subsequent `status` doesn't show a stale entry.
+        _release_pid_lock()
         typer.echo(f"Sent SIGTERM to PID {pid}.")
     else:
         typer.echo(f"Stale PID file ({pid}); cleaning up.")
