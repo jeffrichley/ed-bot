@@ -32,7 +32,11 @@ class WatchAlertStore:
 
     def __init__(self, db_path: pathlib.Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
+        # check_same_thread=False: the CLI opens the store on the main thread
+        # but APScheduler dispatches polls onto a worker thread. SQLite is
+        # fine with cross-thread use as long as access is serialized, which
+        # APScheduler's BlockingScheduler does by default (one job at a time).
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute(_CREATE_TABLE)
         self._conn.commit()

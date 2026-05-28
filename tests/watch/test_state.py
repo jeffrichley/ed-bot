@@ -57,3 +57,31 @@ def test_db_parent_dir_is_created(tmp_path):
         assert db.exists()
     finally:
         s.close()
+
+
+def test_usable_from_worker_thread(tmp_path):
+    """APScheduler dispatches polls on worker threads; SQLite must allow it.
+
+    Regression: 2026-05-28 the watcher crashed on its first scheduled poll
+    with "SQLite objects created in a thread can only be used in that same
+    thread" because the connection lacked check_same_thread=False.
+    """
+    import threading
+
+    store = WatchAlertStore(tmp_path / "tracker.db")  # main thread
+    errors: list[BaseException] = []
+
+    def worker():
+        try:
+            store.record(42, "new_thread", "2026-05-28T10:00:00Z")
+            assert store.is_new_event(42, "new_thread", "2026-05-28T10:00:00Z") is False
+        except BaseException as e:
+            errors.append(e)
+
+    try:
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join(timeout=5)
+        assert not errors, f"Worker thread raised: {errors[0]!r}"
+    finally:
+        store.close()
