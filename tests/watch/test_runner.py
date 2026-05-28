@@ -64,3 +64,40 @@ def test_on_recovery_silent_when_no_prior_alert(capsys):
     rs = RetryState(cap_seconds=300)
     _on_recovery(rs)
     assert capsys.readouterr().out == ""
+
+
+def test_build_scheduler_wrap_window_creates_two_jobs():
+    from ed_bot.watch.config import WatchConfig, Window
+    from ed_bot.watch.runner import build_scheduler
+
+    cfg = WatchConfig(
+        course_id=98559,
+        windows=[Window(
+            days=["mon"], start_hour=22, start_minute=0,
+            end_hour=9, end_minute=0, interval_seconds=1800,
+        )],
+        sounds={},
+    )
+    scheduler = build_scheduler(cfg, lambda: None)
+    jobs = scheduler.get_jobs()
+    assert len(jobs) == 2  # split into [22-23] and [0-8]
+    hour_specs = sorted(str(j.trigger.fields[5]) for j in jobs)
+    # APScheduler stringifies fields; just confirm both windows present
+    assert any("22-23" in s or "22,23" in s for s in hour_specs), hour_specs
+    assert any("0-8" in s or "0,1,2,3,4,5,6,7,8" in s for s in hour_specs), hour_specs
+
+
+def test_build_scheduler_normal_window_creates_one_job():
+    from ed_bot.watch.config import WatchConfig, Window
+    from ed_bot.watch.runner import build_scheduler
+
+    cfg = WatchConfig(
+        course_id=98559,
+        windows=[Window(
+            days=["mon"], start_hour=9, start_minute=0,
+            end_hour=22, end_minute=0, interval_seconds=300,
+        )],
+        sounds={},
+    )
+    scheduler = build_scheduler(cfg, lambda: None)
+    assert len(scheduler.get_jobs()) == 1

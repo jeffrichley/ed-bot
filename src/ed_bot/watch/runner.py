@@ -93,17 +93,40 @@ def build_scheduler(
 
     for w in config.windows:
         if w.interval_seconds is None:
-            continue  # "off" window — no job
-        # CronTrigger.hour uses inclusive ranges; watch.yaml's end_hour is exclusive
-        # (e.g. "09:00-22:00" means fire 9:00 through 21:59). Subtract 1 to match.
-        scheduler.add_job(
-            job,
-            trigger=CronTrigger(
-                day_of_week=",".join(w.days),
-                hour=f"{w.start_hour}-{max(w.end_hour - 1, w.start_hour)}",
-                minute=f"*/{max(w.interval_seconds // 60, 1)}",
-            ),
-        )
+            continue
+        minute_spec = f"*/{max(w.interval_seconds // 60, 1)}"
+        days_spec = ",".join(w.days)
+
+        # CronTrigger.hour uses inclusive ranges; watch.yaml's end_hour is exclusive.
+        if w.start_hour < w.end_hour:
+            # Normal window, e.g. 09:00-22:00 -> hour=9-21
+            scheduler.add_job(
+                job,
+                trigger=CronTrigger(
+                    day_of_week=days_spec,
+                    hour=f"{w.start_hour}-{w.end_hour - 1}",
+                    minute=minute_spec,
+                ),
+            )
+        else:
+            # Wrap window, e.g. 22:00-09:00 -> two jobs: [22-23] and [0-8]
+            scheduler.add_job(
+                job,
+                trigger=CronTrigger(
+                    day_of_week=days_spec,
+                    hour=f"{w.start_hour}-23",
+                    minute=minute_spec,
+                ),
+            )
+            if w.end_hour > 0:
+                scheduler.add_job(
+                    job,
+                    trigger=CronTrigger(
+                        day_of_week=days_spec,
+                        hour=f"0-{w.end_hour - 1}",
+                        minute=minute_spec,
+                    ),
+                )
     return scheduler
 
 
