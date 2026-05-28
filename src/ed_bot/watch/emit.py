@@ -14,7 +14,14 @@ def emit(kind: EventKind, **fields) -> None:
 
     Used by Claude Code's Monitor tool to surface watcher events as chat
     notifications.
+
+    Notes:
+        * A `ts` key inside ``fields`` is overridden by the generated UTC
+          timestamp. Callers should not pass `ts`.
+        * Non-JSON-native field values (datetime, Path, UUID, etc.) are
+          serialized via ``str()`` rather than raising — keeping the watcher
+          alive on best-effort serialization.
     """
     payload = {"kind": kind, **fields, "ts": datetime.now(timezone.utc).isoformat()}
-    sys.stdout.write(json.dumps(payload) + "\n")
+    sys.stdout.write(json.dumps(payload, default=str) + "\n")
     sys.stdout.flush()

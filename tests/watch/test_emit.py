@@ -31,3 +31,14 @@ def test_emit_error_event(capsys):
 def test_emit_terminates_with_newline(capsys):
     emit("recovered")
     assert capsys.readouterr().out.endswith("\n")
+
+
+import pathlib
+
+
+def test_emit_serializes_non_native_types_via_str(capsys):
+    emit("new_thread", thread_id=1, path=pathlib.Path("/tmp/x"))
+    import json
+    payload = json.loads(capsys.readouterr().out)
+    # pathlib.Path should serialize via str() instead of raising TypeError
+    assert payload["path"] == str(pathlib.Path("/tmp/x"))
