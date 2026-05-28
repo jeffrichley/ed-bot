@@ -847,7 +847,7 @@ requires-dist = [
     { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.4.0" },
     { name = "markdownify", specifier = ">=1.2.2" },
     { name = "markitdown", specifier = ">=0.1.0" },
-    { name = "playsound3", specifier = ">=2.0.0" },
+    { name = "playsound3", specifier = ">=3.0.0" },
     { name = "pyqmd", editable = "../py-qmd" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
