@@ -42,18 +42,21 @@ def poll(
 
         # Re-emit guards (only apply when we've already alerted on this thread
         # with the same kind — first-time alerts always fire).
+        # NOTE: when silencing a re-emit, preserve the prior `kind` in the
+        # stored row. Recording as "silent" would break the next poll's guard
+        # check (`prev_kind == current_kind`) and the thread would re-emit.
         prev = store.get(thread_id)
         if prev is not None and prev["last_alert_kind"] == kind:
             prev_reply_count = int(prev.get("last_reply_count") or 0)
             # 1. Reply count hasn't grown — nothing meaningful happened.
             #    updated_at can tick for edits/votes/etc. without new replies.
             if reply_count <= prev_reply_count:
-                store.record(thread_id, "silent", event_at, reply_count)
+                store.record(thread_id, kind, event_at, reply_count)
                 continue
             # 2. Replies grew, but only staff has touched the thread since
             #    our last alert — it's being handled, stay silent.
             if not t.get("has_non_staff_activity_since_alert", True):
-                store.record(thread_id, "silent", event_at, reply_count)
+                store.record(thread_id, kind, event_at, reply_count)
                 continue
 
         # Actionable: play sound + emit JSON + record.
