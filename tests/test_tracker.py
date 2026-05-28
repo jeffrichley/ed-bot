@@ -333,3 +333,58 @@ class TestTrackerLifecycle:
         stats = tracker.get_stats()
         assert stats["answered_by_us"] == 1
         assert stats["total_tracked"] == 1
+
+
+class TestMigrationDropThreadNumberUnique:
+    """Older DBs had UNIQUE(thread_number), which collides across courses."""
+
+    _OLD_SCHEMA = """\
+        CREATE TABLE threads (
+            thread_id              INTEGER PRIMARY KEY,
+            thread_number          INTEGER UNIQUE NOT NULL,
+            title                  TEXT    NOT NULL DEFAULT '',
+            category               TEXT    NOT NULL DEFAULT '',
+            last_seen_updated_at   TEXT,
+            last_checked_at        TEXT,
+            reply_count_seen       INTEGER NOT NULL DEFAULT 0,
+            our_answer_id          INTEGER,
+            status                 TEXT    NOT NULL DEFAULT 'new',
+            is_answered            INTEGER NOT NULL DEFAULT 0
+        );
+    """
+
+    def _make_old_db(self, db_path):
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.executescript(self._OLD_SCHEMA)
+        conn.execute(
+            "INSERT INTO threads (thread_id, thread_number, title) VALUES (1, 100, 'Old')"
+        )
+        conn.commit()
+        conn.close()
+
+    def test_old_schema_migrated(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        self._make_old_db(db_path)
+
+        tracker = ThreadTracker(db_path)
+        try:
+            # Inserting a new row with a *colliding* thread_number must succeed.
+            tracker.upsert_from_list([
+                _make_thread(thread_id=2, thread_number=100, title="New")
+            ])
+            stats = tracker.get_stats()
+            assert stats["total_tracked"] == 2
+        finally:
+            tracker.close()
+
+    def test_existing_data_preserved(self, tmp_bot_dir):
+        db_path = tmp_bot_dir / "state" / "tracker.db"
+        self._make_old_db(db_path)
+
+        tracker = ThreadTracker(db_path)
+        try:
+            stats = tracker.get_stats()
+            assert stats["total_tracked"] == 1
+        finally:
+            tracker.close()

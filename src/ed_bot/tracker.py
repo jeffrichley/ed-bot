@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 _CREATE_TABLE = """\
 CREATE TABLE IF NOT EXISTS threads (
     thread_id              INTEGER PRIMARY KEY,
-    thread_number          INTEGER UNIQUE NOT NULL,
+    thread_number          INTEGER NOT NULL,
     title                  TEXT    NOT NULL DEFAULT '',
     category               TEXT    NOT NULL DEFAULT '',
     last_seen_updated_at   TEXT,
@@ -19,6 +19,27 @@ CREATE TABLE IF NOT EXISTS threads (
     status                 TEXT    NOT NULL DEFAULT 'new',
     is_answered            INTEGER NOT NULL DEFAULT 0
 );
+"""
+
+# EdStem thread numbers are only unique *per course*. An earlier schema had
+# UNIQUE on thread_number, which collided across semesters. This migration
+# rebuilds the table without that constraint for existing DBs.
+_MIGRATE_DROP_THREAD_NUMBER_UNIQUE = """\
+ALTER TABLE threads RENAME TO threads_old;
+CREATE TABLE threads (
+    thread_id              INTEGER PRIMARY KEY,
+    thread_number          INTEGER NOT NULL,
+    title                  TEXT    NOT NULL DEFAULT '',
+    category               TEXT    NOT NULL DEFAULT '',
+    last_seen_updated_at   TEXT,
+    last_checked_at        TEXT,
+    reply_count_seen       INTEGER NOT NULL DEFAULT 0,
+    our_answer_id          INTEGER,
+    status                 TEXT    NOT NULL DEFAULT 'new',
+    is_answered            INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO threads SELECT * FROM threads_old;
+DROP TABLE threads_old;
 """
 
 _UPSERT = """\
@@ -50,7 +71,19 @@ class ThreadTracker:
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.execute(_CREATE_TABLE)
+        self._migrate_drop_thread_number_unique()
         self._conn.commit()
+
+    def _migrate_drop_thread_number_unique(self) -> None:
+        for idx in self._conn.execute("PRAGMA index_list('threads')").fetchall():
+            if not idx["unique"]:
+                continue
+            cols = self._conn.execute(
+                f"PRAGMA index_info('{idx['name']}')"
+            ).fetchall()
+            if len(cols) == 1 and cols[0]["name"] == "thread_number":
+                self._conn.executescript(_MIGRATE_DROP_THREAD_NUMBER_UNIQUE)
+                return
 
     def close(self) -> None:
         self._conn.close()
