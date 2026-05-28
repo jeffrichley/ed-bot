@@ -174,3 +174,30 @@ def test_poll_silent_when_only_updated_at_ticks_no_replies(store, sound_files, c
     poll(course_id=98559, fetch=lambda _: [t2], store=store,
          play=lambda *a, **kw: None, sound_files=sound_files)
     assert capsys.readouterr().out == ""
+
+
+def test_poll_dedup_silence_preserves_kind_across_multiple_polls(store, sound_files, capsys):
+    """Regression: silencing a re-emit must not overwrite last_alert_kind to
+    'silent', or the next poll's guard check (prev_kind == current_kind)
+    fails and the thread re-emits."""
+    # Poll 1: first alert.
+    t1 = mk_thread(thread_id=42, updated_at="2026-05-28T10:00:00Z", reply_count=0)
+    poll(course_id=98559, fetch=lambda _: [t1], store=store,
+         play=lambda *a, **kw: None, sound_files=sound_files)
+    capsys.readouterr()
+
+    # Poll 2: updated_at ticks, no new replies. Should silence.
+    t2 = mk_thread(thread_id=42, updated_at="2026-05-28T11:00:00Z", reply_count=0)
+    poll(course_id=98559, fetch=lambda _: [t2], store=store,
+         play=lambda *a, **kw: None, sound_files=sound_files)
+    assert capsys.readouterr().out == ""
+    # Row must still report the original kind, not "silent".
+    assert store.get(42)["last_alert_kind"] == "new_thread"
+
+    # Poll 3: another updated_at tick, still no new replies. Should also
+    # silence — this is the bug we caught: previously kind was wiped to
+    # "silent" so this poll's guard didn't match and it re-emitted.
+    t3 = mk_thread(thread_id=42, updated_at="2026-05-28T12:00:00Z", reply_count=0)
+    poll(course_id=98559, fetch=lambda _: [t3], store=store,
+         play=lambda *a, **kw: None, sound_files=sound_files)
+    assert capsys.readouterr().out == ""
