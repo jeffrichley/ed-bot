@@ -110,6 +110,9 @@ Follow the tone rules based on question type:
 ### Step 5: Draft the answer
 Write the answer following the style guide and guardrails. Reference specific course materials when relevant (lecture timestamps, project docs, past threads).
 
+### Step 5b: Humanize the draft
+Run the `/humanizer` skill on the draft before presenting it. The answer should read like a real TA wrote it — conversational, varied sentence structure, no AI-sounding patterns. Pay special attention to removing stock openers/closers, formulaic bold-header lists, and significance inflation.
+
 Present the draft clearly.
 
 ### Step 6: User decision
@@ -126,11 +129,13 @@ Present the draft clearly.
   ```
   Use `reply` when the student posted a follow-up as a nested reply to an existing answer/comment. The `<comment_id>` is the ID of the comment you're responding to (visible in the thread detail JSON under `replies`).
 
-  **After posting, mark the thread as resolved** by accepting the comment:
-  ```bash
-  ed-api --quiet comments accept <comment_id>
-  ```
-  Use the comment ID returned from the post/reply command. This checks the "resolved" checkmark on EdStem.
+  **After posting, mark the thread as resolved:**
+  - Only top-level answers can be accepted — nested replies cannot.
+  - If you posted a **new answer** (`comments post ... --answer`), accept it:
+    ```bash
+    ed-api --quiet comments accept <comment_id>
+    ```
+  - If you posted a **nested reply** (`comments reply`), check whether the thread already has an accepted answer (`is_answered: true` in the thread JSON). If it does, skip the accept step — the thread is already resolved. If not, accept the parent top-level answer instead.
 
   Then show the report list again (minus the completed thread).
 
@@ -144,8 +149,9 @@ Present the draft clearly.
 
 1. **NEVER provide solution code** for graded assignments. Ever.
 2. **Check guardrails** before every draft. If no guardrails file exists for a project, be extra cautious.
-3. **Reference past threads** when they directly answer the question. Students appreciate knowing others had the same issue.
-4. **Be encouraging.** These are grad students who are often stressed.
+3. **Never reference the knowledge base, past threads, or past semesters** in answers. The KB is an internal tool for finding correct answers. Just state the answer as if you know it.
+4. **Never criticize or call rubric/instructions "confusing."** We wrote them. Clarify what they mean without undermining them.
+5. **Be encouraging.** These are grad students who are often stressed.
 5. **When unsure, say so.** Flag the thread as NEEDS HUMAN rather than guessing.
 6. **Private threads stay private.** Don't reference private thread content in public answers.
 7. **Post as answer, not comment** — use the `--answer` flag for new answers on threads. Use `comments reply` for responding to nested follow-ups.

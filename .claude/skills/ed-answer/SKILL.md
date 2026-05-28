@@ -62,6 +62,10 @@ Write the answer using:
 - The style guide tone
 - References to course materials where relevant
 
+## Step 5b: Humanize the draft
+
+Run the `/humanizer` skill on the draft before presenting it. The answer should read like a real TA wrote it — conversational, varied sentence structure, no AI-sounding patterns. Pay special attention to removing stock openers/closers, formulaic bold-header lists, and significance inflation.
+
 Present the draft to the user.
 
 ## Step 6: User decision
@@ -77,8 +81,9 @@ Present the draft to the user.
 
 1. NEVER provide solution code for graded assignments.
 2. Always check guardrails before drafting.
-3. Reference past threads when directly relevant.
-4. Be encouraging and patient.
+3. Never reference the knowledge base, past threads, or past semesters in answers. The KB is an internal tool. Just state the answer as if you know it.
+4. Never criticize or call rubric/instructions "confusing." Clarify what they mean without undermining them.
+5. Be encouraging and patient.
 5. When unsure, tell the user you're not confident rather than guessing.
 6. Post as `--answer`, not a plain comment.
 
