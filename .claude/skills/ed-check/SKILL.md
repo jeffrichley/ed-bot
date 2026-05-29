@@ -21,7 +21,7 @@ If you find yourself about to present a draft without having explicitly invoked 
 
 All commands run from the `E:\workspaces\school\gt\ed` directory (where the `.env` file lives).
 
-- **Course ID:** Read from `~/.ed-bot/config.yaml` → `course_id` field (currently 91346)
+- **Active course:** resolve at runtime from `~/.ed-bot/config.yaml` (the top-level `course_id:` key). NEVER hardcode a course ID — it changes every semester.
 - **Knowledge base:** `~/.ed-bot/pyqmd` (indexed via pyqmd)
 - **Playbook:** `~/.ed-bot/playbook/` (style guide + guardrails)
 
@@ -41,9 +41,11 @@ This returns ONLY threads that have changed since last check:
 
 If the result is empty (`[]`), the forum is caught up — report that and offer next actions.
 
-For each returned thread, fetch the full detail:
-```bash
-ed-api --quiet threads get 91346:<thread_number> --json
+For each returned thread, fetch the full detail (resolve the active course
+from config — never hardcode it):
+```powershell
+$course = (Select-String -Path $HOME\.ed-bot\config.yaml -Pattern '^course_id:\s*(\d+)').Matches[0].Groups[1].Value
+ed-api --quiet threads get "${course}:<thread_number>" --json
 ```
 
 Read the question and any existing comments. Classify each:
