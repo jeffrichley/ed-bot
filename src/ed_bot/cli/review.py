@@ -170,6 +170,30 @@ def skip(
     console.print(f"Draft {draft_id} skipped.")
 
 
+def _filter_actionable(changed: list[dict]) -> list[dict]:
+    """Drop "updated" threads where nothing substantive grew.
+
+    EdStem's updated_at ticks for edits/votes/staff status changes without
+    new replies. Those should not show up as actionable on every scan.
+
+    Keep:
+      - tracker_status == "new"                    (first time seen)
+      - tracker_status == "updated_since_answered" (we answered, new activity)
+      - tracker_status == "needs_followup"         (set by _has_unanswered_followup)
+      - tracker_status == "updated" AND reply_count_increased
+        (genuinely new replies under an existing thread)
+    Drop:
+      - tracker_status == "updated" AND not reply_count_increased
+        (timestamp tick only — escalations and admin threads churn here)
+    """
+    out: list[dict] = []
+    for t in changed:
+        if t["tracker_status"] == "updated" and not t.get("reply_count_increased", False):
+            continue
+        out.append(t)
+    return out
+
+
 def _has_unanswered_followup(thread_detail) -> bool:
     """Check if any reply chain in the thread ends with a non-staff comment."""
     def _check_replies(comment, users) -> bool:
@@ -250,11 +274,9 @@ def scan(
         except Exception:
             pass  # if fetch fails, keep existing status
 
-    # Filter out updated threads that are just timestamp bumps (no new replies, already answered)
-    actionable = [
-        t for t in changed
-        if t["tracker_status"] != "updated" or not t["is_answered"]
-    ]
+    # Filter out updated threads that are just timestamp bumps with no new replies.
+    # See _filter_actionable docstring for the rationale.
+    actionable = _filter_actionable(changed)
 
     tracker.close()
 
