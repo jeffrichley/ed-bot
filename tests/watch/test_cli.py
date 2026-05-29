@@ -61,11 +61,27 @@ def test_stop_releases_pid_lock(tmp_path, monkeypatch):
     assert not pid_path.exists(), "PID file should be cleaned up after stop"
 
 
+def _cmt(id, role, created_at, replies=None):
+    """Build a comment mock matching the real ed-api shape: a commenter's role
+    lives on ``comment.author.role``, not ``comment.user_role``."""
+    return MagicMock(id=id, author=MagicMock(role=role),
+                     created_at=created_at, replies=replies or [])
+
+
+def test_comment_is_staff_reads_author_role_not_user_role():
+    from ed_bot.watch.cli import _comment_is_staff
+    assert _comment_is_staff(MagicMock(author=MagicMock(role="staff"))) is True
+    assert _comment_is_staff(MagicMock(author=MagicMock(role="admin"))) is True
+    assert _comment_is_staff(MagicMock(author=MagicMock(role="instructor"))) is True
+    assert _comment_is_staff(MagicMock(author=MagicMock(role="student"))) is False
+    assert _comment_is_staff(MagicMock(author=None)) is False
+
+
 def test_has_non_staff_activity_since_detects_student_reply():
     from ed_bot.watch.cli import _has_non_staff_activity_since
     detail = MagicMock(comments=[
-        MagicMock(id=1, user_role="staff",   created_at="2026-05-28T10:30:00Z", replies=[]),
-        MagicMock(id=2, user_role="student", created_at="2026-05-28T11:00:00Z", replies=[]),
+        _cmt(1, "staff", "2026-05-28T10:30:00Z"),
+        _cmt(2, "student", "2026-05-28T11:00:00Z"),
     ])
     assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is True
 
@@ -73,10 +89,47 @@ def test_has_non_staff_activity_since_detects_student_reply():
 def test_has_non_staff_activity_since_silent_when_only_staff():
     from ed_bot.watch.cli import _has_non_staff_activity_since
     detail = MagicMock(comments=[
-        MagicMock(id=1, user_role="staff", created_at="2026-05-28T10:30:00Z", replies=[]),
-        MagicMock(id=2, user_role="admin", created_at="2026-05-28T11:00:00Z", replies=[]),
+        _cmt(1, "staff", "2026-05-28T10:30:00Z"),
+        _cmt(2, "admin", "2026-05-28T11:00:00Z"),
     ])
     assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is False
+
+
+def test_has_non_staff_activity_since_silent_for_instructor_reply():
+    """Regression for #166: an instructor posting an extension approval
+    (role on author, not user_role) must NOT count as student activity."""
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        _cmt(1, "staff", "2026-05-29T19:00:00+00:00"),
+    ])
+    assert _has_non_staff_activity_since(detail, "2026-05-29T18:45:00+00:00") is False
+
+
+def test_has_non_staff_activity_since_descends_three_levels():
+    """Regression for #166: the real thread nested an admin extension-approval
+    reply UNDER a student thank-you UNDER the first admin forward. The old
+    two-level walk missed the deepest node. Here a staff reply is the deepest,
+    posted after `since`, and the only non-staff comment predates `since` —
+    so the thread must read as handled (no non-staff activity since)."""
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        _cmt(1, "admin", "2026-05-29T13:58:00+00:00",
+             replies=[_cmt(2, "student", "2026-05-29T14:02:00+00:00",
+                           replies=[_cmt(3, "admin", "2026-05-29T18:40:00+00:00")])]),
+    ])
+    # Since 18:30: only the depth-3 admin reply is newer -> handled -> False.
+    assert _has_non_staff_activity_since(detail, "2026-05-29T18:30:00+00:00") is False
+
+
+def test_has_non_staff_activity_since_finds_deep_student_reply():
+    """Mirror: a NEW student reply nested deep must still re-alert."""
+    from ed_bot.watch.cli import _has_non_staff_activity_since
+    detail = MagicMock(comments=[
+        _cmt(1, "admin", "2026-05-29T13:58:00+00:00",
+             replies=[_cmt(2, "admin", "2026-05-29T18:40:00+00:00",
+                           replies=[_cmt(3, "student", "2026-05-29T19:30:00+00:00")])]),
+    ])
+    assert _has_non_staff_activity_since(detail, "2026-05-29T19:00:00+00:00") is True
 
 
 def test_has_non_staff_activity_since_alerts_when_no_anchor():
@@ -89,9 +142,8 @@ def test_has_non_staff_activity_since_alerts_when_no_anchor():
 def test_has_non_staff_activity_since_walks_nested_replies():
     from ed_bot.watch.cli import _has_non_staff_activity_since
     detail = MagicMock(comments=[
-        MagicMock(id=1, user_role="staff", created_at="2026-05-28T10:30:00Z",
-                  replies=[MagicMock(id=10, user_role="student",
-                                     created_at="2026-05-28T10:45:00Z")]),
+        _cmt(1, "staff", "2026-05-28T10:30:00Z",
+             replies=[_cmt(10, "student", "2026-05-28T10:45:00Z")]),
     ])
     assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00Z") is True
 
@@ -173,9 +225,7 @@ def test_has_non_staff_activity_since_handles_mixed_datetime_and_string():
     from datetime import datetime, timezone
     from ed_bot.watch.cli import _has_non_staff_activity_since
     detail = MagicMock(comments=[
-        MagicMock(id=1, user_role="student",
-                  created_at=datetime(2026, 5, 28, 11, 0, tzinfo=timezone.utc),
-                  replies=[]),
+        _cmt(1, "student", datetime(2026, 5, 28, 11, 0, tzinfo=timezone.utc)),
     ])
     # since_ts is an ISO string (as stored in watch_alerts.last_alert_at).
     assert _has_non_staff_activity_since(detail, "2026-05-28T10:00:00+00:00") is True
@@ -187,9 +237,7 @@ def test_has_non_staff_activity_since_no_crash_with_naive_datetime():
     from datetime import datetime
     from ed_bot.watch.cli import _has_non_staff_activity_since
     detail = MagicMock(comments=[
-        MagicMock(id=1, user_role="student",
-                  created_at=datetime(2026, 5, 28, 11, 0),  # naive
-                  replies=[]),
+        _cmt(1, "student", datetime(2026, 5, 28, 11, 0)),  # naive
     ])
     # The call should not raise; safe behavior is either True or False
     # depending on tz handling — we just assert no exception.

@@ -26,6 +26,13 @@ def _matches_escalation(thread: dict) -> bool:
     return bool(_ESCALATION_RE.search(haystack))
 
 
+def title_is_escalation(title: str) -> bool:
+    """Title-only escalation check. The fetch layer uses this to decide whether
+    an already-alerted thread always warrants a detail fetch, so staff-handling
+    can be detected without relying on the drift-prone /ed-check reply counter."""
+    return bool(_ESCALATION_RE.search(title or ""))
+
+
 def classify(thread: dict) -> Decision:
     """Map a thread + tracker context to a Decision.
 
