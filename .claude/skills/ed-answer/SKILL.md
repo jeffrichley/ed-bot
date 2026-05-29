@@ -19,15 +19,23 @@ If you find yourself about to present a draft without having explicitly invoked 
 
 ## Prerequisites
 
-All commands run from `E:\workspaces\school\gt\ed` directory.
-- Course ID: 91346 (from `~/.ed-bot/config.yaml`)
+All commands run from the `E:\workspaces\school\gt\ed` directory (so the
+`.env` API token loads).
+- **Active course:** resolve at runtime from `~/.ed-bot/config.yaml` (the
+  top-level `course_id:` key). NEVER hardcode a course ID — it changes every
+  semester.
 - Knowledge base: `~/.ed-bot/pyqmd`
 
 ## Step 1: Fetch the thread
 
-```bash
-cd E:\workspaces\school\gt\ed
-ed-api threads get 91346:<thread_number> --json
+`ed-api threads get` accepts either a bare thread ID or `course_id:number`.
+If you already have the thread ID (e.g. surfaced by `/ed-watch`), pass it
+directly. Otherwise resolve the active course from config first:
+
+```powershell
+Set-Location E:\workspaces\school\gt\ed
+$course = (Select-String -Path $HOME\.ed-bot\config.yaml -Pattern '^course_id:\s*(\d+)').Matches[0].Groups[1].Value
+ed-api threads get "${course}:<thread_number>" --json
 ```
 
 Display the full question and any existing comments to the user.

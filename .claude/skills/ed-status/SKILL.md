@@ -9,9 +9,10 @@ Quick overview of the forum and knowledge base. No drafting, no posting.
 
 ## Step 1: Get thread counts
 
-```bash
-cd E:\workspaces\school\gt\ed
-ed-api threads list 91346 --no-pinned --limit 100 --json
+```powershell
+Set-Location E:\workspaces\school\gt\ed
+$course = (Select-String -Path $HOME\.ed-bot\config.yaml -Pattern '^course_id:\s*(\d+)').Matches[0].Groups[1].Value
+ed-api threads list $course --no-pinned --limit 100 --json
 ```
 
 Count:
@@ -39,8 +40,12 @@ Count threads by `tracker_status`: new, updated, updated_since_answered.
 
 ## Step 3: Present dashboard
 
+Derive the semester label from config: match the active top-level `course_id`
+against the `semesters:` list in `~/.ed-bot/config.yaml` and use that entry's
+`name`. Never hardcode the semester.
+
 ```
-EdStem Dashboard — CS 7646 Spring 2026
+EdStem Dashboard — CS 7646 <active semester from config>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Activity Since Last Check:
