@@ -38,6 +38,11 @@ E:\workspaces\school\gt\ed
 3. Follow the style guide for tone (Socratic for conceptual, direct for logistics, etc.)
 4. Post answers with `--answer` flag, not as plain comments
 5. When unsure, flag for human review rather than guessing
+6. **Run `/humanizer` on every drafted forum answer before showing it to the
+   user.** No exceptions. The pre-humanizer draft is internal — only the
+   humanizer's final output is ever presented or posted. The `ed-check` and
+   `ed-answer` skills both have a MANDATORY Step 5b for this; do not skip it
+   on the rationalization that "the draft already sounds fine."
 
 ## Troubleshooting
 
