@@ -11,10 +11,53 @@ from typing import Callable, Optional
 
 import typer
 from ed_bot.watch import config as wconfig
+from ed_bot.watch.classify import title_is_escalation
 from ed_bot.watch.poll import poll as run_poll
 from ed_bot.watch.runner import build_scheduler, run
 from ed_bot.watch.sound import play
 from ed_bot.watch.state import WatchAlertStore
+
+
+_STAFF_ROLES = {"admin", "staff", "instructor", "ta"}
+
+
+def _comment_is_staff(comment) -> bool:
+    """Whether a comment's author is staff.
+
+    The ed-api ``Comment`` model carries the author's role on
+    ``comment.author`` (a ``UserSummary`` with ``.role``), NOT as
+    ``comment.user_role``. The old code read ``comment.user_role``, which the
+    model never sets, so every commenter looked like a student. That let an
+    instructor's reply (e.g. Gary approving an extension on a "Medical
+    Emergency" thread) keep re-firing escalation alerts, and made staff
+    replies count as student follow-ups.
+    """
+    author = getattr(comment, "author", None)
+    return author is not None and getattr(author, "role", "") in _STAFF_ROLES
+
+
+def _iter_comments(detail_or_comment, _is_detail=True):
+    """Yield every comment and reply in a thread, at any nesting depth.
+
+    EdStem nests replies arbitrarily (a student can reply to a staff reply to
+    a student comment, etc.). The #166 thread was three levels deep, and the
+    old two-level walk missed the deepest comment. Flatten the whole tree so
+    role/timestamp checks see every node.
+    """
+    if _is_detail:
+        roots = getattr(detail_or_comment, "comments", None) or []
+        for c in roots:
+            yield from _iter_comments(c, _is_detail=False)
+        return
+    yield detail_or_comment
+    for r in getattr(detail_or_comment, "replies", None) or []:
+        yield from _iter_comments(r, _is_detail=False)
+
+
+def _created_of(comment):
+    return _as_datetime(
+        getattr(comment, "created_at", None) or getattr(comment, "updated_at", None)
+    )
 
 
 def _as_datetime(value) -> Optional[datetime]:
@@ -71,18 +114,10 @@ def _has_non_staff_activity_since(detail, since_ts) -> bool:
     since = _as_datetime(since_ts)
     if since is None:
         return True  # no anchor to compare against — be safe, alert
-    staff_roles = {"admin", "staff", "instructor", "ta"}
-    comments = getattr(detail, "comments", None) or []
-    for c in comments:
-        is_staff = getattr(c, "user_role", "") in staff_roles
-        created = _as_datetime(getattr(c, "created_at", None) or getattr(c, "updated_at", None))
-        if not is_staff and created is not None and created > since:
+    for c in _iter_comments(detail):
+        created = _created_of(c)
+        if not _comment_is_staff(c) and created is not None and created > since:
             return True
-        for r in getattr(c, "replies", None) or []:
-            r_is_staff = getattr(r, "user_role", "") in staff_roles
-            r_created = _as_datetime(getattr(r, "created_at", None) or getattr(r, "updated_at", None))
-            if not r_is_staff and r_created is not None and r_created > since:
-                return True
     return False
 
 
@@ -109,31 +144,20 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
         return row[0], row[1] or 0
 
     def _has_student_followup(detail, our_answer_id: int) -> bool:
-        """Walk replies and look for a non-staff comment posted after our answer."""
-        comments = getattr(detail, "comments", None) or []
+        """Look for a non-staff comment posted after our answer, at any depth."""
         our_answer_time = None
-        for c in comments:
-            cid = getattr(c, "id", None)
-            if cid == our_answer_id:
-                our_answer_time = _as_datetime(
-                    getattr(c, "created_at", None) or getattr(c, "updated_at", None)
-                )
+        for c in _iter_comments(detail):
+            if getattr(c, "id", None) == our_answer_id:
+                our_answer_time = _created_of(c)
                 break
         if our_answer_time is None:
             return False
-        for c in comments:
+        for c in _iter_comments(detail):
             if getattr(c, "id", None) == our_answer_id:
                 continue
-            is_staff = getattr(c, "user_role", "") in {"admin", "staff", "instructor", "ta"}
-            created = _as_datetime(getattr(c, "created_at", None) or getattr(c, "updated_at", None))
-            if not is_staff and created is not None and created > our_answer_time:
+            created = _created_of(c)
+            if not _comment_is_staff(c) and created is not None and created > our_answer_time:
                 return True
-            # Walk nested replies
-            for r in getattr(c, "replies", None) or []:
-                r_is_staff = getattr(r, "user_role", "") in {"admin", "staff", "instructor", "ta"}
-                r_created = _as_datetime(getattr(r, "created_at", None) or getattr(r, "updated_at", None))
-                if not r_is_staff and r_created is not None and r_created > our_answer_time:
-                    return True
         return False
 
     def fetch(cid: int) -> list[dict]:
@@ -164,7 +188,16 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
                 # Decide whether to detail-fetch.
                 already_alerted = prev_alert_kind in {"new_thread", "followup", "escalation"}
                 replies_grew = t.reply_count > reply_count_seen
-                need_detail = replies_grew and (our_answer_id is not None or already_alerted)
+                # Escalation threads we've already alerted on always get a
+                # detail fetch so staff-handling can be detected. The
+                # `replies_grew` signal compares against the /ed-check tracker's
+                # reply counter, which the watcher does not maintain, so it can
+                # drift and wrongly read False — which previously left
+                # has_non_staff_activity_since_alert at its alert-by-default.
+                is_escalation = title_is_escalation(t.title)
+                need_detail = (replies_grew or (is_escalation and already_alerted)) and (
+                    our_answer_id is not None or already_alerted
+                )
 
                 if need_detail:
                     try:
