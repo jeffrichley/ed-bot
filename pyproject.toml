@@ -9,6 +9,7 @@ dependencies = [
     "rich>=13.0.0",
     "pyyaml>=6.0",
     "anthropic>=0.40.0",
+    "claude-agent-sdk>=0.1.0",
     "ed-api",
     "pyqmd",
     "markitdown>=0.1.0",
@@ -42,6 +43,10 @@ packages = ["src/ed_bot"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "live: hits the real Claude Agent SDK (deselected by default; run with -m live)",
+]
+addopts = "-m 'not live'"
 
 [tool.uv.sources]
 ed-api = { path = "../ed-api", editable = true }
@@ -51,4 +56,5 @@ pyqmd = { path = "../py-qmd", editable = true }
 dev = [
     "mkdocs-material>=9.7.6",
     "pytest>=9.0.2",
+    "freezegun>=1.4.0",
 ]
