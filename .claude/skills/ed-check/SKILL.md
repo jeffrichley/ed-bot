@@ -58,12 +58,18 @@ Read the question and any existing comments. Classify each:
   - SKIP: administrative, integrity, or non-content question
 
 **Canned responses (administrative):** Some recurring administrative threads
-have a pre-approved reply in `~/.ed-bot/playbook/canned-responses.md`. The
-clearest case is an **extension request** — use the `extension_request` canned
-text verbatim instead of drafting from scratch (and skip the humanizer step,
-since the canned text is already reviewed). Still post it as `--answer` and
-accept the thread to resolve it. Check that file before treating an
-administrative thread as a pure NEEDS-HUMAN flag.
+have a pre-approved reply in `~/.ed-bot/playbook/canned-responses.md`. Check
+that file before treating an administrative thread as a pure NEEDS-HUMAN flag,
+and post the matching canned text verbatim (skip the humanizer — it's already
+reviewed), still as `--answer`, then accept to resolve.
+
+**Extension requests must be triaged, not auto-forwarded.** Read the student's
+reason and pick the right case from the canned-responses file:
+`extension_request__emergency` (illness, family emergency, bereavement → we
+forward) vs. `extension_request__discretionary` (travel, work, vacation,
+"behind", or vague reason → ask them to clarify the reason or go through the
+Dean of Students). If you can't tell which applies, flag NEEDS HUMAN rather
+than guessing.
 
 ## Phase 2: Present Report
 

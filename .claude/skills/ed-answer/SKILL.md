@@ -53,11 +53,17 @@ Show the user what context was found (top 3-5 results summarized).
 ## Step 2b: Check for a canned response
 
 Some recurring administrative threads have a pre-approved reply in
-`~/.ed-bot/playbook/canned-responses.md`. The clearest case is an **extension
-request** — use the `extension_request` canned text verbatim instead of
-drafting, and skip Step 5b (humanizer), since the canned text is already
-reviewed. Still post as `--answer` and accept the thread to resolve it. If a
-canned response applies, jump straight to Step 6.
+`~/.ed-bot/playbook/canned-responses.md`. If one applies, use it verbatim, skip
+Step 5b (humanizer) since it's already reviewed, and jump to Step 6 (post as
+`--answer`, accept to resolve).
+
+**Extension requests must be triaged, not auto-forwarded.** Read the student's
+stated reason and pick the right case: `extension_request__emergency` (illness,
+family emergency, bereavement → we forward) vs.
+`extension_request__discretionary` (travel, work, vacation, "behind", or a
+vague reason → ask them to clarify the reason or route them to the Dean of
+Students). If you can't tell which applies, flag NEEDS HUMAN rather than
+guessing.
 
 ## Step 3: Load guardrails
 
