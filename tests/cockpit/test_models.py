@@ -2,7 +2,16 @@
 import pytest
 from pydantic import ValidationError
 
-from ed_bot.cockpit.models import UserCommand, WatcherEvent
+from ed_bot.cockpit.models import (
+    ActionResult,
+    AlertBanner,
+    DraftPayload,
+    QueueItem,
+    QueueUpdate,
+    StatusUpdate,
+    UserCommand,
+    WatcherEvent,
+)
 
 
 def test_user_command_minimal():
@@ -44,11 +53,6 @@ def test_watcher_event_rejects_unknown_kind():
         )
 
 
-from ed_bot.cockpit.models import (
-    QueueItem, QueueUpdate, DraftPayload, StatusUpdate, ActionResult, AlertBanner,
-)
-
-
 def test_queue_item_defaults():
     item = QueueItem(
         thread_id=8104866, number=207, title="Figure 1 graph",
@@ -67,12 +71,16 @@ def test_queue_update_holds_items():
 
 
 def test_draft_payload_is_humanized_only():
-    # The contract must NOT carry a raw / pre-humanizer field. The UI can only
-    # ever receive the final body. Guard the invariant explicitly.
-    fields = set(DraftPayload.model_fields)
-    for forbidden in ("raw_body", "raw_draft", "pre_humanizer", "draft_raw"):
-        assert forbidden not in fields, f"DraftPayload must not expose {forbidden}"
-    assert "body" in fields
+    # The contract must NEVER expose a raw / pre-humanizer field. Assert the
+    # EXACT field set so any unexpected addition (e.g. "original_body") fails
+    # loudly and forces a conscious update here, not just the four obvious
+    # forbidden names.
+    expected = {
+        "thread_id", "number", "question", "body", "is_canned", "project",
+        "guardrails_checked", "confidence", "post_kind", "target_comment_id",
+    }
+    assert set(DraftPayload.model_fields) == expected
+    assert "body" in expected
 
 
 def test_draft_payload_roundtrip():
