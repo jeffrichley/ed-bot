@@ -36,6 +36,7 @@ async def default_sdk_query(*, prompt: str, schema: dict, cwd: str) -> dict:
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, ResultMessage):
             result = message.structured_output
+            break
     if result is None:
         raise RuntimeError("SDK returned no structured_output")
     return result

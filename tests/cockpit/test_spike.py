@@ -1,5 +1,6 @@
 """Unit tests for the spike's logic, with a fake SDK query (no network)."""
 import pytest
+from pydantic import ValidationError
 
 from ed_bot.cockpit.models import WatcherEvent, DraftPayload
 from ed_bot.cockpit.spike import draft_for_event
@@ -18,6 +19,8 @@ async def test_draft_for_event_returns_validated_payload():
     async def fake_sdk_query(*, prompt, schema, cwd):
         assert schema["type"] == "object"
         assert "207" in prompt
+        assert "Project 1 | Martingale" in prompt
+        assert "edstem.org/us/courses/98559/discussion/8104866" in prompt
         return {
             "thread_id": 8104866, "number": 207,
             "question": "How does Gradescope check our chart output?",
@@ -38,5 +41,5 @@ async def test_draft_for_event_raises_on_schema_violation():
     async def bad_sdk_query(*, prompt, schema, cwd):
         return {"number": 207}  # missing required fields
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         await draft_for_event(_event(), cwd=".", sdk_query=bad_sdk_query)
