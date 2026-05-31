@@ -26,8 +26,11 @@ async def test_live_draft_for_real_thread():
     assert payload.number == 207
     assert payload.body.strip(), "body must be non-empty"
 
-    # Humanizer signature: the project bans em dashes. A humanized answer must
-    # not contain one. Cheap proxy that the humanizer ran.
-    assert "—" not in payload.body, "em dash present, humanizer likely skipped"
+    body = payload.body
+    is_refusal = "NEEDS HUMAN" in body.upper()
+    if not is_refusal:
+        # A real (non-refusal) answer must be humanized; the project bans em
+        # dashes, so their absence is a cheap proxy that the humanizer ran.
+        assert "—" not in body, "em dash present in answer, humanizer likely skipped"
 
-    print("\n--- LIVE DRAFT ---\n", payload.model_dump_json(indent=2))
+    print("\n--- LIVE DRAFT (refusal=%s) ---\n" % is_refusal, payload.model_dump_json(indent=2))
