@@ -57,6 +57,14 @@ Read the question and any existing comments. Classify each:
   - LOW: no relevant results
   - SKIP: administrative, integrity, or non-content question
 
+**Canned responses (administrative):** Some recurring administrative threads
+have a pre-approved reply in `~/.ed-bot/playbook/canned-responses.md`. The
+clearest case is an **extension request** — use the `extension_request` canned
+text verbatim instead of drafting from scratch (and skip the humanizer step,
+since the canned text is already reviewed). Still post it as `--answer` and
+accept the thread to resolve it. Check that file before treating an
+administrative thread as a pure NEEDS-HUMAN flag.
+
 ## Phase 2: Present Report
 
 Present a summary like this:

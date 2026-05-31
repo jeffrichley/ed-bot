@@ -50,6 +50,15 @@ qmd search "<thread title + key concepts>" --data-dir ~/.ed-bot/pyqmd --json --t
 
 Show the user what context was found (top 3-5 results summarized).
 
+## Step 2b: Check for a canned response
+
+Some recurring administrative threads have a pre-approved reply in
+`~/.ed-bot/playbook/canned-responses.md`. The clearest case is an **extension
+request** — use the `extension_request` canned text verbatim instead of
+drafting, and skip Step 5b (humanizer), since the canned text is already
+reviewed. Still post as `--answer` and accept the thread to resolve it. If a
+canned response applies, jump straight to Step 6.
+
 ## Step 3: Load guardrails
 
 Detect the project from the thread's category. Check for a guardrails file:
