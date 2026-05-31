@@ -46,6 +46,7 @@ pythonpath = ["src"]
 markers = [
     "live: hits the real Claude Agent SDK (deselected by default; run with -m live)",
 ]
+addopts = "-m 'not live'"
 
 [tool.uv.sources]
 ed-api = { path = "../ed-api", editable = true }
