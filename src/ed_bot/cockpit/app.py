@@ -13,6 +13,7 @@ from textual.containers import Horizontal
 from textual.widgets import Header, Footer, Input
 from textual import work
 
+from ed_bot.cockpit.command_parser import parse_command
 from ed_bot.cockpit.loop import CockpitLoop
 from ed_bot.cockpit.messages import LoopEmission
 from ed_bot.cockpit.models import (
@@ -23,6 +24,13 @@ from ed_bot.cockpit.widgets import QueueRail, DraftViewer, StatusBar, AlertBanne
 
 class CockpitApp(App):
     CSS_PATH = "app.tcss"
+    BINDINGS = [
+        ("a", "act('approve')", "approve"),
+        ("e", "act('edit')", "edit"),
+        ("r", "act('reject')", "reject"),
+        ("f", "act('flag')", "flag"),
+        ("s", "act('skip')", "skip"),
+    ]
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None) -> None:
@@ -58,6 +66,20 @@ class CockpitApp(App):
         elif isinstance(payload, ActionResult):
             ok = "posted" if payload.ok else f"not posted: {payload.message}"
             self.query_one(StatusBar).show(ok)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        event.input.value = ""
+        if not text:
+            return
+        cmd = parse_command(text, active_thread=self._active_thread)
+        self.inject_command(cmd)
+
+    def action_act(self, intent: str) -> None:
+        if self._active_thread is None:
+            self.query_one(StatusBar).show("no active thread")
+            return
+        self.inject_command(UserCommand(intent=intent, thread=self._active_thread))
 
     # --- feeding the loop ---
     async def inject_event(self, event: WatcherEvent) -> None:
