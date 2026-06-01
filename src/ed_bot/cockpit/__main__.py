@@ -37,13 +37,19 @@ def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
     return chat_fn
 
 
-def build_seed_event(number: int, course_id: int) -> WatcherEvent:
+def resolve_seed_thread_id(client, course_id: int, number: int) -> int:
+    """Resolve a course-local thread number to its global EdStem thread id."""
+    return client.threads.get_by_number(course_id, number).id
+
+
+def build_seed_event(number: int, course_id: int, thread_id: int) -> WatcherEvent:
     """A minimal WatcherEvent to seed a demo draft for thread ``number``.
 
-    Title/category aren't known without a fetch, so use placeholders — the agent
-    fetches the real thread by number when it drafts."""
+    ``thread_id`` is the resolved GLOBAL EdStem id (the loop reconciles drafts
+    to it for routing). Title/category aren't known without a fetch, so use
+    placeholders. The agent fetches the real thread by number when it drafts."""
     return WatcherEvent(
-        kind="new_thread", thread_id=number, number=number,
+        kind="new_thread", thread_id=thread_id, number=number,
         title=f"(seeded thread #{number})", category="Project 1 | Martingale",
         url=f"https://edstem.org/us/courses/{course_id}/discussion/{number}",
     )
@@ -115,7 +121,8 @@ def main() -> None:  # pragma: no cover - thin live wiring
             # immediately and each draft runs in the background, so the UI and
             # input stay responsive during the live SDK calls.
             for number in seed_numbers:
-                app.draft_event(build_seed_event(number, course_id))
+                tid = resolve_seed_thread_id(client, course_id, number)
+                app.draft_event(build_seed_event(number, course_id, tid))
         app.call_after_refresh(_seed)
 
     app.run()
