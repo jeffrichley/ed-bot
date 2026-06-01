@@ -97,6 +97,13 @@ class CockpitApp(App):
         cmd = parse_command(text, active_thread=self._active_thread)
         self.inject_command(cmd)
 
+    def on_option_list_option_selected(self, event) -> None:
+        """A queue item was chosen: open its draft (same as 'open N')."""
+        option_id = event.option_id
+        if option_id is None or option_id == "__empty__":
+            return
+        self.inject_command(UserCommand(intent="open", thread=int(option_id)))
+
     def action_act(self, intent: str) -> None:
         if self._active_thread is None:
             self.query_one(StatusBar).show("no active thread")
