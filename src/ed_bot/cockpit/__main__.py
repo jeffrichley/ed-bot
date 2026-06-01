@@ -77,9 +77,12 @@ def main() -> None:  # pragma: no cover - thin live wiring
 
     seed_numbers = parse_seed_numbers(args.seed)
     if seed_numbers:
-        async def _seed() -> None:
+        def _seed() -> None:
+            # draft_event is a @work worker (non-blocking): the rows render
+            # immediately and each draft runs in the background, so the UI and
+            # input stay responsive during the live SDK calls.
             for number in seed_numbers:
-                await app.inject_event(build_seed_event(number, course_id))
+                app.draft_event(build_seed_event(number, course_id))
         app.call_after_refresh(_seed)
 
     app.run()

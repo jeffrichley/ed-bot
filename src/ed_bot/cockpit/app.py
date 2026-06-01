@@ -56,10 +56,12 @@ class CockpitApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Paint initial placeholder state so the panels aren't blank."""
+        """Paint initial placeholder state so the panels aren't blank, and put
+        keyboard focus on the chat input (not the now-focusable queue rail)."""
         self.query_one(QueueRail).show([])
         self.query_one(DraftViewer).show(None)
         self.query_one(StatusBar).show("ready")
+        self.query_one("#chat", Input).focus()
 
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
@@ -112,7 +114,17 @@ class CockpitApp(App):
 
     # --- feeding the loop ---
     async def inject_event(self, event: WatcherEvent) -> None:
-        """Awaitable entry-point used by tests and the watcher task."""
+        """Awaitable entry-point used by tests. NOTE: this awaits the auto-draft
+        inline, so callers on the message pump (e.g. startup seeding) must use
+        ``draft_event`` instead to avoid freezing the UI during the live SDK
+        draft."""
+        await self.loop.handle(event)
+
+    @work(group="draft")
+    async def draft_event(self, event: WatcherEvent) -> None:
+        """Process a forum event (create queue item + auto-draft) on a
+        background worker so the live SDK draft never blocks the message pump.
+        Drafts for different events run concurrently."""
         await self.loop.handle(event)
 
     @work()
