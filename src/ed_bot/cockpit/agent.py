@@ -103,12 +103,27 @@ from claude_agent_sdk import AssistantMessage, TextBlock
 
 SdkText = Callable[..., Awaitable[str]]
 
-_CHAT_PROMPT = """You are the ed-bot forum assistant operating the cockpit for \
-EdStem course {course_id}. The user is talking to you in the cockpit chat. \
-Answer concisely and helpfully. You have the project tools (ed-api, qmd, the \
-guardrails and playbook under ~/.ed-bot) available if you need them.
+_CHAT_PREAMBLE = """You are the ed-bot forum assistant operating the cockpit for \
+EdStem course {course_id}. You are having an ongoing conversation with the user \
+in the cockpit chat. Use the conversation so far for context (the user expects \
+you to remember what was said earlier in this chat). Answer concisely and \
+helpfully. You have the project tools (ed-api, qmd, the guardrails and playbook \
+under ~/.ed-bot) available if you need them.""".strip()
 
-User: {text}""".strip()
+
+def _build_chat_prompt(course_id: int, history: list[tuple[str, str]],
+                       text: str) -> str:
+    """Fold the conversation history + the new user message into one prompt.
+
+    ``history`` is a list of (role, text) for prior turns, role in
+    {"you", "ed-bot"}. The current user message is appended last."""
+    lines = [_CHAT_PREAMBLE.format(course_id=course_id), "", "Conversation so far:"]
+    for role, msg in history:
+        speaker = "User" if role == "you" else "ed-bot"
+        lines.append(f"{speaker}: {msg}")
+    lines.append(f"User: {text}")
+    lines.append("ed-bot:")
+    return "\n".join(lines)
 
 
 async def default_sdk_text(*, prompt: str, cwd: str) -> str:
@@ -130,8 +145,9 @@ async def chat_reply(
     text: str,
     cwd: str,
     course_id: int,
+    history: list[tuple[str, str]] | None = None,
     sdk_text: SdkText = default_sdk_text,
 ) -> str:
-    """Produce a freeform conversational reply for the cockpit chat."""
-    prompt = _CHAT_PROMPT.format(course_id=course_id, text=text)
+    """Produce a freeform conversational reply, with prior-turn context."""
+    prompt = _build_chat_prompt(course_id, history or [], text)
     return await sdk_text(prompt=prompt, cwd=cwd)

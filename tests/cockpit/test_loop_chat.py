@@ -22,7 +22,7 @@ def _event(number=207):
 async def test_freeform_emits_ed_bot_chat_message():
     emitted = []
 
-    async def chat_fn(*, text, cwd, course_id):
+    async def chat_fn(*, text, cwd, course_id, history):
         return f"echo: {text}"
 
     loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
@@ -34,10 +34,30 @@ async def test_freeform_emits_ed_bot_chat_message():
 
 
 @pytest.mark.anyio
+async def test_freeform_passes_prior_history_to_chat_fn():
+    """The agent must see earlier turns so the conversation has memory."""
+    seen_histories = []
+
+    async def chat_fn(*, text, cwd, course_id, history):
+        seen_histories.append(list(history))
+        return f"reply-to: {text}"
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: None, chat_fn=chat_fn)
+    await loop.handle(UserCommand(intent="freeform", text="my color is purple"))
+    await loop.handle(UserCommand(intent="freeform", text="what is my color"))
+
+    # First turn sees empty history; second sees the first exchange.
+    assert seen_histories[0] == []
+    assert ("you", "my color is purple") in seen_histories[1]
+    assert ("ed-bot", "reply-to: my color is purple") in seen_histories[1]
+
+
+@pytest.mark.anyio
 async def test_freeform_shows_thinking_then_clears():
     emitted = []
 
-    async def chat_fn(*, text, cwd, course_id):
+    async def chat_fn(*, text, cwd, course_id, history):
         return "the reply"
 
     loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
@@ -55,6 +75,26 @@ async def test_freeform_shows_thinking_then_clears():
     assert thinking_idx < reply_idx
     # Final status is back to a non-thinking line.
     assert statuses and "thinking" not in statuses[-1].lower()
+
+
+@pytest.mark.anyio
+async def test_chat_history_is_capped():
+    """Only the last N turns are kept so the prompt stays bounded."""
+    seen_lengths = []
+
+    async def chat_fn(*, text, cwd, course_id, history):
+        seen_lengths.append(len(history))
+        return "ok"
+
+    # limit=4 turns (2 exchanges) of memory.
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: None, chat_fn=chat_fn,
+                       chat_history_limit=4)
+    for i in range(5):
+        await loop.handle(UserCommand(intent="freeform", text=f"msg {i}"))
+
+    # The last turn must see at most the cap (4), never the full 8-turn history.
+    assert seen_lengths[-1] <= 4
 
 
 @pytest.mark.anyio

@@ -43,8 +43,19 @@ def render_draft(d: DraftPayload) -> str:
 
 
 def render_chat_line(msg: ChatMessage) -> str:
-    """One transcript line: 'role > text'."""
-    return f"{msg.role} ▸ {msg.text}"
+    """Render a transcript turn: 'role ▸ text'.
+
+    Multi-paragraph replies are collapsed to single-spaced lines (no stray blank
+    lines) and continuation lines are indented under the role prefix so the
+    turn reads as one block."""
+    prefix = f"{msg.role} ▸ "
+    indent = " " * len(prefix)
+    raw_lines = msg.text.splitlines()
+    # Drop blank lines that would otherwise show as empty gaps in the transcript.
+    lines = [ln for ln in raw_lines if ln.strip()] or [""]
+    out = [prefix + lines[0]]
+    out += [indent + ln for ln in lines[1:]]
+    return "\n".join(out)
 
 
 class QueueRail(Static):

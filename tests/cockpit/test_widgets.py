@@ -54,3 +54,15 @@ def test_render_chat_line_formats_role_and_text():
     bot = render_chat_line(ChatMessage(role="ed-bot", text="posted #207"))
     assert "ed-bot" in bot
     assert "posted #207" in bot
+
+
+def test_render_chat_line_collapses_blank_lines_and_indents():
+    from ed_bot.cockpit.widgets import render_chat_line
+    from ed_bot.cockpit.models import ChatMessage
+    msg = ChatMessage(role="ed-bot", text="First line.\n\nSecond paragraph.")
+    rendered = render_chat_line(msg)
+    lines = rendered.split("\n")
+    assert "" not in lines  # no stray blank lines
+    assert lines[0].startswith("ed-bot ▸ First line.")
+    assert "Second paragraph." in lines[1]
+    assert lines[1].startswith(" ")  # continuation indented

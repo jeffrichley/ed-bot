@@ -6,6 +6,7 @@ it; user commands act on existing items. Outbound typed results go to the
 injected ``emit`` callback (Plan 3 wires it to Textual widgets)."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Awaitable, Callable, Optional
 
 from ed_bot.cockpit.models import (
@@ -26,7 +27,8 @@ class CockpitLoop:
     def __init__(self, *, cwd: str, course_id: int, draft_fn: DraftFn,
                  emit: Emit, post_fn: "PostFn | None" = None,
                  is_answered_fn: "IsAnsweredFn | None" = None,
-                 chat_fn: "ChatFn | None" = None) -> None:
+                 chat_fn: "ChatFn | None" = None,
+                 chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
         self._draft_fn = draft_fn
@@ -36,6 +38,14 @@ class CockpitLoop:
         self._chat_fn = chat_fn
         self._items: dict[int, QueueItem] = {}
         self._drafts: dict[int, DraftPayload] = {}
+        # Chat conversation memory: (role, text) per turn, role in you|ed-bot.
+        # Capped at the last ``chat_history_limit`` turns so the prompt (and
+        # cost) stays bounded over a long session.
+        self._chat_history: list[tuple[str, str]] = []
+        self._chat_history_limit = chat_history_limit
+        # Serialize chat turns so concurrent submits can't race / answer out of
+        # order, and so each turn sees the prior turns in history.
+        self._chat_lock = asyncio.Lock()
 
     # --- read accessors (Plan 3 / tests) ---
     def queue_item(self, number: int) -> Optional[QueueItem]:
@@ -99,16 +109,29 @@ class CockpitLoop:
             self._emit_queue_summary()
             return None
         if cmd.intent == "freeform" and self._chat_fn is not None:
+            await self._handle_freeform(cmd.text or "")
+            return None
+        return None
+
+    async def _handle_freeform(self, text: str) -> None:
+        # The lock serializes turns: turn N appends to history before turn N+1
+        # reads it, so replies stay in order and each sees prior context.
+        async with self._chat_lock:
+            history = list(self._chat_history)
+            self._chat_history.append(("you", text))
             self._emit(StatusUpdate(line="ed-bot is thinking..."))
             try:
                 reply = await self._chat_fn(
-                    text=cmd.text or "", cwd=self._cwd, course_id=self._course_id,
+                    text=text, cwd=self._cwd, course_id=self._course_id,
+                    history=history,
                 )
             finally:
                 self._emit(StatusUpdate(line="ready"))
+            self._chat_history.append(("ed-bot", reply))
+            # Keep only the most recent turns so the prompt stays bounded.
+            if len(self._chat_history) > self._chat_history_limit:
+                self._chat_history = self._chat_history[-self._chat_history_limit:]
             self._emit(ChatMessage(role="ed-bot", text=reply))
-            return None
-        return None
 
     def _emit_queue_summary(self) -> None:
         items = list(self._items.values())

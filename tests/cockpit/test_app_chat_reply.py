@@ -12,7 +12,7 @@ def _make_app():
         return DraftPayload(thread_id=8100000 + number, number=number,
                             question="q", body="b", confidence="HIGH")
 
-    async def chat_fn(*, text, cwd, course_id):
+    async def chat_fn(*, text, cwd, course_id, history):
         return f"you said: {text}"
 
     return CockpitApp(cwd=".", course_id=98559, draft_fn=draft_fn,
