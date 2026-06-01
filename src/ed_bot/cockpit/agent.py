@@ -97,3 +97,41 @@ async def draft_thread(
     payload = DraftPayload.model_validate(raw)
     warnings = guardrail_scan(payload.body, _guardrail_path_for(payload.project))
     return payload.model_copy(update={"guardrail_warnings": warnings})
+
+
+from claude_agent_sdk import AssistantMessage, TextBlock
+
+SdkText = Callable[..., Awaitable[str]]
+
+_CHAT_PROMPT = """You are the ed-bot forum assistant operating the cockpit for \
+EdStem course {course_id}. The user is talking to you in the cockpit chat. \
+Answer concisely and helpfully. You have the project tools (ed-api, qmd, the \
+guardrails and playbook under ~/.ed-bot) available if you need them.
+
+User: {text}""".strip()
+
+
+async def default_sdk_text(*, prompt: str, cwd: str) -> str:
+    """Plain (non-structured) SDK call; returns the concatenated assistant text."""
+    options = build_options(schema={"type": "object"}, cwd=cwd)
+    # Reuse the correct cockpit config but ignore structured output for chat.
+    options.output_format = None
+    chunks: list[str] = []
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    chunks.append(block.text)
+    return "".join(chunks).strip()
+
+
+async def chat_reply(
+    *,
+    text: str,
+    cwd: str,
+    course_id: int,
+    sdk_text: SdkText = default_sdk_text,
+) -> str:
+    """Produce a freeform conversational reply for the cockpit chat."""
+    prompt = _CHAT_PROMPT.format(course_id=course_id, text=text)
+    return await sdk_text(prompt=prompt, cwd=cwd)
