@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --- Inbound to the agent ---
 
@@ -76,7 +76,9 @@ class DraftPayload(BaseModel):
     never be able to display pre-humanizer content. ``guardrail_warnings`` is an
     advisory, non-blocking list of possible Never-Reveal hits to speed review."""
 
-    thread_id: int
+    thread_id: int = Field(
+        description="The global EdStem thread id (the 'id' field from ed-api), "
+        "not the course-local number.")
     number: int
     question: str
     body: str
