@@ -1,7 +1,16 @@
 """Tests for the entry-point wiring helpers (no live app run)."""
 import pytest
 
-from ed_bot.cockpit.__main__ import build_draft_fn
+from ed_bot.cockpit.__main__ import build_draft_fn, build_seed_event
+from ed_bot.cockpit.models import WatcherEvent
+
+
+def test_build_seed_event_targets_thread_number():
+    ev = build_seed_event(222, 98559)
+    assert isinstance(ev, WatcherEvent)
+    assert ev.number == 222
+    assert ev.kind == "new_thread"
+    assert "98559" in ev.url and "222" in ev.url
 
 
 @pytest.mark.anyio

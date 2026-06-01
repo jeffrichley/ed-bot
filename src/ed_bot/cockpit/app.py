@@ -52,6 +52,12 @@ class CockpitApp(App):
         yield Input(placeholder="type a command (e.g. 'post it')", id="chat")
         yield Footer()
 
+    def on_mount(self) -> None:
+        """Paint initial placeholder state so the panels aren't blank."""
+        self.query_one(QueueRail).show([])
+        self.query_one(DraftViewer).show(None)
+        self.query_one(StatusBar).show("ready")
+
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
         """Sync callback handed to the loop; never touches widgets directly."""

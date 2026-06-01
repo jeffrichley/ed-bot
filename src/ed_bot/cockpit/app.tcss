@@ -16,11 +16,13 @@ Screen {
 
 #queue {
     width: 38%;
+    height: 100%;
     border: solid $primary;
 }
 
 #draft {
     width: 1fr;
+    height: 100%;
     border: solid $primary;
 }
 

@@ -1,17 +1,19 @@
 """Entry point: wire the real backends and run the cockpit.
 
-Run with:  python -m ed_bot.cockpit
+Run with:        python -m ed_bot.cockpit
+Demo a thread:   python -m ed_bot.cockpit --seed 222
 
-The wiring helpers are split out and injectable so they can be unit-tested
-without a live app run or network."""
+``--seed N`` injects a WatcherEvent for thread N on startup so you can watch the
+live agent draft it (the real watcher/poll wiring is a follow-up). The wiring
+helpers are split out and injectable so they can be unit-tested without a live
+app run or network."""
 from __future__ import annotations
 
-import asyncio
-from typing import Awaitable, Callable
+import argparse
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
 from ed_bot.cockpit.config import ed_working_dir, resolve_course_id
-from ed_bot.cockpit.models import DraftPayload
+from ed_bot.cockpit.models import DraftPayload, WatcherEvent
 
 
 def build_draft_fn(*, cwd: str, draft_thread=_agent_draft_thread):
@@ -22,8 +24,25 @@ def build_draft_fn(*, cwd: str, draft_thread=_agent_draft_thread):
     return draft_fn
 
 
+def build_seed_event(number: int, course_id: int) -> WatcherEvent:
+    """A minimal WatcherEvent to seed a demo draft for thread ``number``.
+
+    Title/category aren't known without a fetch, so use placeholders — the agent
+    fetches the real thread by number when it drafts."""
+    return WatcherEvent(
+        kind="new_thread", thread_id=number, number=number,
+        title=f"(seeded thread #{number})", category="Project 1 | Martingale",
+        url=f"https://edstem.org/us/courses/{course_id}/discussion/{number}",
+    )
+
+
 def main() -> None:  # pragma: no cover - thin live wiring
     from ed_bot.cockpit.app import CockpitApp
+
+    parser = argparse.ArgumentParser(prog="ed_bot.cockpit")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="inject a WatcherEvent for this thread number on startup")
+    args = parser.parse_args()
 
     cwd = str(ed_working_dir())
     course_id = resolve_course_id()
@@ -34,6 +53,13 @@ def main() -> None:  # pragma: no cover - thin live wiring
     # working against the agent now.
     app = CockpitApp(cwd=cwd, course_id=course_id, draft_fn=draft_fn,
                      post_fn=None, is_answered_fn=None, fetch_events=None)
+
+    if args.seed is not None:
+        seed_event = build_seed_event(args.seed, course_id)
+        # Inject the seed after the first refresh so the placeholders paint
+        # first and the agent draft updates the display when it returns.
+        app.call_after_refresh(app.inject_event, seed_event)
+
     app.run()
 
 
