@@ -1,7 +1,9 @@
 """Tests for the loop's chat handling: freeform -> ed-bot reply, check_forum -> summary."""
 import pytest
 
-from ed_bot.cockpit.models import WatcherEvent, UserCommand, DraftPayload, ChatMessage
+from ed_bot.cockpit.models import (
+    WatcherEvent, UserCommand, DraftPayload, ChatMessage, StatusUpdate,
+)
 from ed_bot.cockpit.loop import CockpitLoop
 
 
@@ -29,6 +31,30 @@ async def test_freeform_emits_ed_bot_chat_message():
 
     chats = [m for m in emitted if isinstance(m, ChatMessage)]
     assert any(c.role == "ed-bot" and "echo: hello there" in c.text for c in chats)
+
+
+@pytest.mark.anyio
+async def test_freeform_shows_thinking_then_clears():
+    emitted = []
+
+    async def chat_fn(*, text, cwd, course_id):
+        return "the reply"
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: emitted.append(m), chat_fn=chat_fn)
+    await loop.handle(UserCommand(intent="freeform", text="hi"))
+
+    statuses = [m.line for m in emitted if isinstance(m, StatusUpdate)]
+    # A "thinking" status fires before the reply, and is cleared afterward.
+    assert any("thinking" in s.lower() for s in statuses)
+    # The thinking status comes before the ed-bot reply in emission order.
+    thinking_idx = next(i for i, m in enumerate(emitted)
+                        if isinstance(m, StatusUpdate) and "thinking" in m.line.lower())
+    reply_idx = next(i for i, m in enumerate(emitted)
+                     if isinstance(m, ChatMessage) and m.role == "ed-bot")
+    assert thinking_idx < reply_idx
+    # Final status is back to a non-thinking line.
+    assert statuses and "thinking" not in statuses[-1].lower()
 
 
 @pytest.mark.anyio

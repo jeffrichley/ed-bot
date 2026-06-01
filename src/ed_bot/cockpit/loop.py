@@ -99,9 +99,13 @@ class CockpitLoop:
             self._emit_queue_summary()
             return None
         if cmd.intent == "freeform" and self._chat_fn is not None:
-            reply = await self._chat_fn(
-                text=cmd.text or "", cwd=self._cwd, course_id=self._course_id,
-            )
+            self._emit(StatusUpdate(line="ed-bot is thinking..."))
+            try:
+                reply = await self._chat_fn(
+                    text=cmd.text or "", cwd=self._cwd, course_id=self._course_id,
+                )
+            finally:
+                self._emit(StatusUpdate(line="ready"))
             self._emit(ChatMessage(role="ed-bot", text=reply))
             return None
         return None
