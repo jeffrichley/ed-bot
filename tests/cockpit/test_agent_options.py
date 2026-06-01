@@ -9,6 +9,7 @@ def test_build_options_loads_project_and_preset():
     assert opts.system_prompt["type"] == "preset"
     assert opts.system_prompt["preset"] == "claude_code"
     assert "guardrail" in opts.system_prompt["append"].lower()
+    assert "humanizer" in opts.system_prompt["append"].lower()
     # project settings (CLAUDE.md, .claude/skills) load
     assert opts.setting_sources == ["project"]
     assert opts.skills == "all"
