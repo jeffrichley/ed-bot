@@ -94,6 +94,12 @@ class CockpitLoop:
             self._emit(StatusUpdate(line=f"draft #{number} failed: {e}"))
             self._push_queue()
             return
+        # The watcher/seed event carries the authoritative GLOBAL thread id.
+        # The agent's returned thread_id is an unguided LLM value, so never
+        # trust it for routing: reconcile to the queue item's id.
+        item = self._items.get(number)
+        if item is not None:
+            payload = payload.model_copy(update={"thread_id": item.thread_id})
         self._drafts[number] = payload
         self._items[number] = self._items[number].model_copy(
             update={"draft_state": "ready"})
