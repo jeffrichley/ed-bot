@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
+from ed_bot.cockpit.agent import chat_reply as _agent_chat_reply
 from ed_bot.cockpit.config import ed_working_dir, resolve_course_id
 from ed_bot.cockpit.models import DraftPayload, WatcherEvent
 
@@ -22,6 +23,13 @@ def build_draft_fn(*, cwd: str, draft_thread=_agent_draft_thread):
     async def draft_fn(*, number: int, cwd: str = cwd, course_id: int) -> DraftPayload:
         return await draft_thread(number=number, cwd=cwd, course_id=course_id)
     return draft_fn
+
+
+def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
+    """The loop's chat_fn: route freeform text to the agent from the ed dir."""
+    async def chat_fn(*, text: str, cwd: str = cwd, course_id: int) -> str:
+        return await chat_reply(text=text, cwd=cwd, course_id=course_id)
+    return chat_fn
 
 
 def build_seed_event(number: int, course_id: int) -> WatcherEvent:
@@ -47,12 +55,14 @@ def main() -> None:  # pragma: no cover - thin live wiring
     cwd = str(ed_working_dir())
     course_id = resolve_course_id()
     draft_fn = build_draft_fn(cwd=cwd)
+    chat_fn = build_chat_fn(cwd=cwd)
 
     # NOTE: post_fn / is_answered_fn / fetch_events wrap the sync ed-api client
     # via asyncio.to_thread in a follow-up; the app runs with auto-draft + chat
     # working against the agent now.
     app = CockpitApp(cwd=cwd, course_id=course_id, draft_fn=draft_fn,
-                     post_fn=None, is_answered_fn=None, fetch_events=None)
+                     post_fn=None, is_answered_fn=None, fetch_events=None,
+                     chat_fn=chat_fn)
 
     if args.seed is not None:
         seed_event = build_seed_event(args.seed, course_id)

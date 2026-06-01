@@ -33,13 +33,15 @@ class CockpitApp(App):
     ]
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
-                 post_fn=None, is_answered_fn=None, fetch_events=None) -> None:
+                 post_fn=None, is_answered_fn=None, fetch_events=None,
+                 chat_fn=None) -> None:
         super().__init__()
         self._fetch_events = fetch_events
         self._active_thread: Optional[int] = None
         self.loop = CockpitLoop(
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
+            chat_fn=chat_fn,
         )
 
     def compose(self) -> ComposeResult:
