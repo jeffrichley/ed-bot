@@ -55,3 +55,21 @@ def test_parse_seed_numbers_handles_list():
     assert parse_seed_numbers("222, 225 ,226") == [222, 225, 226]
     assert parse_seed_numbers(None) == []
     assert parse_seed_numbers("") == []
+
+
+def test_resolve_watch_interval_defaults_when_no_window():
+    from ed_bot.cockpit.__main__ import resolve_watch_interval
+    from ed_bot.watch.config import WatchConfig
+    cfg = WatchConfig(course_id=1, windows=[], sounds={})
+    # No matching window -> the documented default.
+    assert resolve_watch_interval(cfg) == 120.0
+
+
+def test_resolve_watch_interval_uses_window_interval():
+    from ed_bot.cockpit.__main__ import resolve_watch_interval
+    from ed_bot.watch.config import WatchConfig, Window
+    win = Window(days=["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                 start_hour=0, start_minute=0, end_hour=23, end_minute=59,
+                 interval_seconds=300)
+    cfg = WatchConfig(course_id=1, windows=[win], sounds={})
+    assert resolve_watch_interval(cfg) == 300.0

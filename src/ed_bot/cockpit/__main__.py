@@ -10,6 +10,7 @@ app run or network."""
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
 from ed_bot.cockpit.agent import chat_reply as _agent_chat_reply
@@ -55,12 +56,31 @@ def parse_seed_numbers(raw: str | None) -> list[int]:
     return [int(part.strip()) for part in raw.split(",") if part.strip()]
 
 
+def resolve_watch_interval(cfg, *, default: float = 120.0) -> float:
+    """The poll interval (seconds) for the current time window, or `default`
+    when no window matches or its interval is 'off'."""
+    win = cfg.window_for(datetime.now())
+    if win is None or win.interval_seconds is None:
+        return default
+    return float(win.interval_seconds)
+
+
 def main() -> None:  # pragma: no cover - thin live wiring
+    import pathlib
+    from ed_api import EdClient
+    from ed_bot.config import BotConfig
+    from ed_bot.watch import config as wconfig
+    from ed_bot.watch.state import WatchAlertStore
     from ed_bot.cockpit.app import CockpitApp
+    from ed_bot.cockpit.backends import (
+        build_fetch_events, build_post_fn, build_is_answered_fn,
+    )
 
     parser = argparse.ArgumentParser(prog="ed_bot.cockpit")
     parser.add_argument("--seed", type=str, default=None,
                         help="thread number(s) to seed on startup, comma-separated")
+    parser.add_argument("--no-watch", action="store_true",
+                        help="don't poll the live forum (seed-only)")
     args = parser.parse_args()
 
     cwd = str(ed_working_dir())
@@ -68,12 +88,25 @@ def main() -> None:  # pragma: no cover - thin live wiring
     draft_fn = build_draft_fn(cwd=cwd)
     chat_fn = build_chat_fn(cwd=cwd)
 
-    # NOTE: post_fn / is_answered_fn / fetch_events wrap the sync ed-api client
-    # via asyncio.to_thread in a follow-up; the app runs with auto-draft + chat
-    # working against the agent now.
+    bot_dir = pathlib.Path("~/.ed-bot").expanduser()
+    bot_cfg = BotConfig.load(bot_dir)
+    ed_bot_pkg = pathlib.Path(__file__).resolve().parents[1]  # ed_bot/
+    watch_cfg = wconfig.load(bot_dir / "watch.yaml", ed_bot_dir=ed_bot_pkg)
+
+    client = EdClient(region=bot_cfg.region)
+    post_fn = build_post_fn(client=client)
+    is_answered_fn = build_is_answered_fn(client=client)
+
+    fetch_events = None
+    if not args.no_watch:
+        store = WatchAlertStore(bot_dir / "state" / "tracker.db")
+        fetch_events = build_fetch_events(
+            store=store, sound_files=watch_cfg.sounds)
+
     app = CockpitApp(cwd=cwd, course_id=course_id, draft_fn=draft_fn,
-                     post_fn=None, is_answered_fn=None, fetch_events=None,
-                     chat_fn=chat_fn)
+                     post_fn=post_fn, is_answered_fn=is_answered_fn,
+                     fetch_events=fetch_events, chat_fn=chat_fn,
+                     watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)
     if seed_numbers:
