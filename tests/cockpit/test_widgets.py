@@ -66,3 +66,11 @@ def test_render_chat_line_collapses_blank_lines_and_indents():
     assert lines[0].startswith("ed-bot ▸ First line.")
     assert "Second paragraph." in lines[1]
     assert lines[1].startswith(" ")  # continuation indented
+
+
+def test_queue_rail_is_option_list_and_renders_items():
+    from textual.widgets import OptionList
+    from ed_bot.cockpit.widgets import QueueRail, queue_option_text
+    assert issubclass(QueueRail, OptionList)
+    text = queue_option_text(_item(number=207, title="Figure 1 graph"))
+    assert "207" in text and "Figure 1 graph" in text

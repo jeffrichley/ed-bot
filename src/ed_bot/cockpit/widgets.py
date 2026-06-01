@@ -4,13 +4,14 @@ The render helpers are module functions so they can be unit-tested without
 mounting an app. The widgets are thin wrappers the app updates."""
 from __future__ import annotations
 
-from textual.widgets import Static
+from textual.widgets import Static, OptionList
+from textual.widgets.option_list import Option
 from textual.containers import VerticalScroll
 
 from ed_bot.cockpit.models import QueueItem, DraftPayload, ChatMessage
 
 
-def render_queue_line(item: QueueItem) -> str:
+def queue_option_text(item: QueueItem) -> str:
     """One line for the queue rail."""
     mark = "!" if item.kind == "escalation" else " "
     state = {
@@ -22,6 +23,10 @@ def render_queue_line(item: QueueItem) -> str:
     }.get(item.draft_state, "")
     posted = " (posted)" if item.status == "posted" else ""
     return f"{mark} #{item.number} {item.title} [{state}]{posted}".rstrip()
+
+
+# Backwards-compatible alias (older callers/tests).
+render_queue_line = queue_option_text
 
 
 def render_draft(d: DraftPayload) -> str:
@@ -58,14 +63,24 @@ def render_chat_line(msg: ChatMessage) -> str:
     return "\n".join(out)
 
 
-class QueueRail(Static):
-    """Left rail: the list of actionable threads."""
+class QueueRail(OptionList):
+    """Left rail: a selectable list of actionable threads.
+
+    Each option's id is the thread number (str). Re-rendering on a QueueUpdate
+    preserves the current highlight so navigation isn't disrupted."""
 
     def show(self, items: list[QueueItem]) -> None:
+        prev = self.highlighted
+        self.clear_options()
         if not items:
-            self.update("(queue empty)")
+            self.add_option(Option("(queue empty)", id="__empty__"))
             return
-        self.update("\n".join(render_queue_line(i) for i in items))
+        for item in items:
+            self.add_option(Option(queue_option_text(item), id=str(item.number)))
+        if prev is not None and prev < len(items):
+            self.highlighted = prev
+        elif items:
+            self.highlighted = 0
 
 
 class DraftViewer(Static):
