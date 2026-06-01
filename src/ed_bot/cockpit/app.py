@@ -61,6 +61,16 @@ class CockpitApp(App):
         payload = message.payload
         if isinstance(payload, QueueUpdate):
             self.query_one(QueueRail).show(payload.items)
+            escalations = [
+                i for i in payload.items
+                if i.kind == "escalation" and i.status == "needs_attention"
+            ]
+            banner = self.query_one(AlertBanner)
+            if escalations:
+                top = escalations[0]
+                banner.flash(f"ESCALATION #{top.number}: {top.title}")
+            else:
+                banner.clear_alert()
         elif isinstance(payload, StatusUpdate):
             self.query_one(StatusBar).show(payload.line)
         elif isinstance(payload, ActionResult):
