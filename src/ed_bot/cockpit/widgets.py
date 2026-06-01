@@ -44,11 +44,6 @@ def render_draft(d: DraftPayload) -> str:
 class QueueRail(Static):
     """Left rail: the list of actionable threads."""
 
-    @property
-    def renderable(self):
-        """Alias for ``content``; textual 8.x renamed the attribute."""
-        return self.content
-
     def show(self, items: list[QueueItem]) -> None:
         if not items:
             self.update("(queue empty)")

@@ -34,4 +34,4 @@ async def test_event_autodrafts_and_queue_rail_updates():
             title="Figure 1 graph", category="Project 1 | Martingale", url="u"))
         await pilot.pause()
         rail = app.query_one(QueueRail)
-        assert "207" in str(rail.renderable)
+        assert "207" in str(rail.content)
