@@ -9,9 +9,16 @@ spike was missing.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
+
+# The agent's tools and knowledge live in ~/.ed-bot (config, knowledge base,
+# playbook, guardrails). The SDK confines file access to cwd by default, so we
+# must explicitly grant access to this directory or the agent cannot load
+# guardrails or search the KB.
+_ED_BOT_DIR = str(Path("~/.ed-bot").expanduser())
 
 # Hard restatement layered on top of the loaded CLAUDE.md, emphasizing the two
 # rules the spike found the agent skipped on a bare one-shot call.
@@ -31,7 +38,12 @@ def build_options(*, schema: dict[str, Any], cwd: str) -> ClaudeAgentOptions:
         setting_sources=["project"],
         skills="all",
         cwd=cwd,
-        permission_mode="acceptEdits",
+        add_dirs=[_ED_BOT_DIR],
+        # bypassPermissions so the agent can run its tools (ed-api/qmd via Bash)
+        # without a prompt in this headless cockpit. Acceptable here: it's our
+        # own agent against our own tools, and the human reviews every draft
+        # before it posts. acceptEdits only auto-approves file edits, not Bash.
+        permission_mode="bypassPermissions",
         output_format={"type": "json_schema", "schema": schema},
     )
 
