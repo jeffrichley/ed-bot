@@ -119,3 +119,42 @@ async def test_post_returns_not_ok_on_network_error():
                      target_comment_id=None)
     assert res.ok is False
     assert "503" in res.message
+
+
+async def test_fetch_events_collects_watcher_events():
+    from ed_bot.cockpit.backends import build_fetch_events
+    from ed_bot.cockpit.models import WatcherEvent
+
+    def fake_poll(*, course_id, fetch, store, play, sound_files, on_event):
+        on_event("new_thread", thread_id=321, number=7, title="RF indicators",
+                 category="Project 8 | Random Forest",
+                 url="https://edstem.org/us/courses/1/discussion/321")
+
+    events = build_fetch_events(store=object(), sound_files={},
+                                fetch=lambda cid: [], play=lambda *a, **k: None,
+                                poll=fake_poll)
+    out = await events(1)
+    assert len(out) == 1
+    ev = out[0]
+    assert isinstance(ev, WatcherEvent)
+    assert ev.kind == "new_thread"
+    assert ev.thread_id == 321
+    assert ev.number == 7
+    assert ev.title == "RF indicators"
+
+
+async def test_fetch_events_offloads_to_thread():
+    import threading
+    from ed_bot.cockpit.backends import build_fetch_events
+
+    main_thread = threading.current_thread().ident
+    seen = {}
+
+    def fake_poll(*, course_id, fetch, store, play, sound_files, on_event):
+        seen["thread"] = threading.current_thread().ident
+
+    events = build_fetch_events(store=object(), sound_files={},
+                                fetch=lambda cid: [], play=lambda *a, **k: None,
+                                poll=fake_poll)
+    await events(1)
+    assert seen["thread"] != main_thread
