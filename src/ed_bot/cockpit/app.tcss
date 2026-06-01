@@ -1,0 +1,35 @@
+Screen {
+    layout: vertical;
+}
+
+#alert {
+    display: none;
+    background: $error;
+    color: $text;
+    height: 1;
+    content-align: center middle;
+}
+
+#body {
+    height: 1fr;
+}
+
+#queue {
+    width: 38%;
+    border: solid $primary;
+}
+
+#draft {
+    width: 1fr;
+    border: solid $primary;
+}
+
+#status {
+    height: 1;
+    background: $panel;
+    color: $text-muted;
+}
+
+#chat {
+    height: 3;
+}
