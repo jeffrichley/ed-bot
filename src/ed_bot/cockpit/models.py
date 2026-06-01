@@ -73,7 +73,8 @@ class QueueUpdate(BaseModel):
 class DraftPayload(BaseModel):
     """A drafted reply for one thread. ``body`` is ALWAYS the final,
     post-humanizer text. There is deliberately no raw-draft field: the UI must
-    never be able to display pre-humanizer content."""
+    never be able to display pre-humanizer content. ``guardrail_warnings`` is an
+    advisory, non-blocking list of possible Never-Reveal hits to speed review."""
 
     thread_id: int
     number: int
@@ -85,6 +86,7 @@ class DraftPayload(BaseModel):
     confidence: Confidence = "MEDIUM"
     post_kind: PostKind = "answer"
     target_comment_id: Optional[int] = None
+    guardrail_warnings: list[str] = []
 
 
 class StatusUpdate(BaseModel):

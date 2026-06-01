@@ -78,6 +78,7 @@ def test_draft_payload_is_humanized_only():
     expected = {
         "thread_id", "number", "question", "body", "is_canned", "project",
         "guardrails_checked", "confidence", "post_kind", "target_comment_id",
+        "guardrail_warnings",
     }
     assert set(DraftPayload.model_fields) == expected
     assert "body" in expected
@@ -107,3 +108,10 @@ def test_status_and_alert():
     assert StatusUpdate(line="drafting #207...").line.startswith("drafting")
     a = AlertBanner(thread_id=1, number=166, title="Medical Emergency", text="urgent")
     assert a.number == 166
+
+
+def test_draft_payload_guardrail_warnings_default_empty():
+    d = DraftPayload(
+        thread_id=1, number=1, question="q", body="b",
+    )
+    assert d.guardrail_warnings == []
