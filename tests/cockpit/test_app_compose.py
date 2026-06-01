@@ -34,4 +34,6 @@ async def test_event_autodrafts_and_queue_rail_updates():
             title="Figure 1 graph", category="Project 1 | Martingale", url="u"))
         await pilot.pause()
         rail = app.query_one(QueueRail)
-        assert "207" in str(rail.content)
+        labels = [str(rail.get_option_at_index(i).prompt)
+                  for i in range(rail.option_count)]
+        assert any("207" in label for label in labels)
