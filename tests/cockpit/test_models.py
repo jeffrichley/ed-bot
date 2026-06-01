@@ -115,3 +115,20 @@ def test_draft_payload_guardrail_warnings_default_empty():
         thread_id=1, number=1, question="q", body="b",
     )
     assert d.guardrail_warnings == []
+
+
+def test_chat_message_roles():
+    from ed_bot.cockpit.models import ChatMessage
+    m = ChatMessage(role="you", text="check the forum")
+    assert m.role == "you"
+    assert m.text == "check the forum"
+    e = ChatMessage(role="ed-bot", text="4 threads need attention")
+    assert e.role == "ed-bot"
+
+
+def test_chat_message_rejects_unknown_role():
+    import pytest
+    from pydantic import ValidationError
+    from ed_bot.cockpit.models import ChatMessage
+    with pytest.raises(ValidationError):
+        ChatMessage(role="robot", text="x")

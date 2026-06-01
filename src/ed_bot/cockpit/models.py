@@ -112,3 +112,14 @@ class AlertBanner(BaseModel):
     number: int
     title: str
     text: str
+
+
+ChatRole = Literal["you", "ed-bot"]
+
+
+class ChatMessage(BaseModel):
+    """One line in the chat transcript: a human ('you') or agent ('ed-bot')
+    turn. Emitted by the loop and rendered in the ChatLog."""
+
+    role: ChatRole
+    text: str
