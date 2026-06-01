@@ -43,3 +43,14 @@ def test_render_draft_shows_guardrail_warnings():
                      guardrail_warnings=["possible Never-Reveal leak: 18/38"])
     text = render_draft(d)
     assert "18/38" in text
+
+
+def test_render_chat_line_formats_role_and_text():
+    from ed_bot.cockpit.widgets import render_chat_line
+    from ed_bot.cockpit.models import ChatMessage
+    line = render_chat_line(ChatMessage(role="you", text="post it"))
+    assert "you" in line
+    assert "post it" in line
+    bot = render_chat_line(ChatMessage(role="ed-bot", text="posted #207"))
+    assert "ed-bot" in bot
+    assert "posted #207" in bot

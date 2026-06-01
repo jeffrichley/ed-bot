@@ -5,8 +5,9 @@ mounting an app. The widgets are thin wrappers the app updates."""
 from __future__ import annotations
 
 from textual.widgets import Static
+from textual.containers import VerticalScroll
 
-from ed_bot.cockpit.models import QueueItem, DraftPayload
+from ed_bot.cockpit.models import QueueItem, DraftPayload, ChatMessage
 
 
 def render_queue_line(item: QueueItem) -> str:
@@ -39,6 +40,11 @@ def render_draft(d: DraftPayload) -> str:
         lines += [f"  - {w}" for w in d.guardrail_warnings]
     lines += ["", "[a]pprove  [e]dit  [r]eject  [f]lag  [s]kip"]
     return "\n".join(lines)
+
+
+def render_chat_line(msg: ChatMessage) -> str:
+    """One transcript line: 'role > text'."""
+    return f"{msg.role} ▸ {msg.text}"
 
 
 class QueueRail(Static):
@@ -75,3 +81,12 @@ class AlertBanner(Static):
     def clear_alert(self) -> None:
         self.update("")
         self.styles.display = "none"
+
+
+class ChatLog(VerticalScroll):
+    """Scrollable transcript of you/ed-bot turns."""
+
+    def add(self, msg: ChatMessage) -> None:
+        line = Static(render_chat_line(msg))
+        self.mount(line)
+        line.scroll_visible()
