@@ -242,3 +242,20 @@ history (8).
 - Whether the watcher's existing tracker DB / dedup logic is reused as-is inside
   the watcher task or simplified now that the agent makes the surface/ignore
   judgment.
+
+## Addendum (2026-05-31, from Plan 2): per-task structured calls
+
+The original "single long-lived agent conversation" framing is refined in
+implementation. The Claude Agent SDK exposes structured output (`output_format`)
+only at call construction, with no documented per-turn schema switch. So each
+agent task is ONE `query()` call with its own `output_format` (classify → draft
+→ post), and cross-turn "conversation" is reconstructed by the cockpit (UI
+transcript state), not held in one SDK session. Same user-facing behavior;
+better SDK fit; avoids stale-context bugs since each task fetches fresh.
+
+The agent session is configured with `system_prompt={"type":"preset","preset":
+"claude_code", "append": <hard guardrail+humanizer restatement>}` and
+`setting_sources=["project"]` so CLAUDE.md, skills, and guardrails govern the
+agent — the configuration the Plan 1 spike was missing. Because the human
+reviews every draft before posting, guardrail handling is advisory (a
+non-blocking `guardrail_warnings` list), not a hard gate.
