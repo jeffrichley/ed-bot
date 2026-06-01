@@ -259,3 +259,19 @@ The agent session is configured with `system_prompt={"type":"preset","preset":
 agent — the configuration the Plan 1 spike was missing. Because the human
 reviews every draft before posting, guardrail handling is advisory (a
 non-blocking `guardrail_warnings` list), not a hard gate.
+
+## Running the cockpit (manual)
+
+From the repo root with the venv active:
+
+    python -m ed_bot.cockpit
+
+This launches the Textual UI (Layout A: queue rail, draft viewer, status bar,
+chat input, escalation alert banner). Auto-draft and chat commands run against
+the live agent (from the ed working dir, so ed-api/guardrails resolve). Type
+commands in the chat line ("check the forum", "open 207", "post it", "make it
+more Socratic") or use the one-key actions on a selected draft (a/e/r/f/s).
+
+Posting/staleness and the real watcher poll are wired via `asyncio.to_thread`
+in a follow-up; until then, feed events through the chat/test harness. Because
+the human reviews every draft, guardrail handling stays advisory.
