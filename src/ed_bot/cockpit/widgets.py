@@ -86,6 +86,8 @@ class AlertBanner(Static):
 class ChatLog(VerticalScroll):
     """Scrollable transcript of you/ed-bot turns."""
 
+    can_focus = False
+
     def add(self, msg: ChatMessage) -> None:
         line = Static(render_chat_line(msg))
         self.mount(line)

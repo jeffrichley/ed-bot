@@ -26,6 +26,11 @@ Screen {
     border: solid $primary;
 }
 
+#chatlog {
+    height: 8;
+    border: solid $primary;
+}
+
 #status {
     height: 1;
     background: $panel;

@@ -17,9 +17,9 @@ from ed_bot.cockpit.command_parser import parse_command
 from ed_bot.cockpit.loop import CockpitLoop
 from ed_bot.cockpit.messages import LoopEmission
 from ed_bot.cockpit.models import (
-    WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult,
+    WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
 )
-from ed_bot.cockpit.widgets import QueueRail, DraftViewer, StatusBar, AlertBanner
+from ed_bot.cockpit.widgets import QueueRail, DraftViewer, StatusBar, AlertBanner, ChatLog
 
 
 class CockpitApp(App):
@@ -49,6 +49,7 @@ class CockpitApp(App):
             yield QueueRail(id="queue")
             yield DraftViewer(id="draft")
         yield StatusBar(id="status")
+        yield ChatLog(id="chatlog")
         yield Input(placeholder="type a command (e.g. 'post it')", id="chat")
         yield Footer()
 
@@ -82,12 +83,15 @@ class CockpitApp(App):
         elif isinstance(payload, ActionResult):
             ok = "posted" if payload.ok else f"not posted: {payload.message}"
             self.query_one(StatusBar).show(ok)
+        elif isinstance(payload, ChatMessage):
+            self.query_one(ChatLog).add(payload)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         event.input.value = ""
         if not text:
             return
+        self.query_one(ChatLog).add(ChatMessage(role="you", text=text))
         cmd = parse_command(text, active_thread=self._active_thread)
         self.inject_command(cmd)
 
