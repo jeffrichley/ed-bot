@@ -26,9 +26,13 @@ def build_draft_fn(*, cwd: str, draft_thread=_agent_draft_thread):
 
 
 def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
-    """The loop's chat_fn: route freeform text to the agent from the ed dir."""
-    async def chat_fn(*, text: str, cwd: str = cwd, course_id: int) -> str:
-        return await chat_reply(text=text, cwd=cwd, course_id=course_id)
+    """The loop's chat_fn: route freeform text to the agent from the ed dir,
+    forwarding the conversation history so the chat has memory."""
+    async def chat_fn(*, text: str, course_id: int,
+                      history: list[tuple[str, str]] | None = None,
+                      cwd: str = cwd) -> str:
+        return await chat_reply(text=text, cwd=cwd, course_id=course_id,
+                                history=history)
     return chat_fn
 
 
