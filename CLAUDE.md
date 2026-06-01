@@ -66,3 +66,9 @@ When starting a Claude Code session in this project, proactively invoke
 The watcher is silent on normal startup; it only alerts when an actionable
 event fires. Stopping is automatic when the Claude session ends, or manual
 via `/ed-watch stop`.
+
+When running the cockpit (`python -m ed_bot.cockpit`), it BECOMES the watcher
+for that session: it polls the forum, plays the watch sounds, and owns the
+`watch_alerts` state. Do NOT run `/ed-watch` separately while the cockpit is up,
+because they share `watch_alerts` and would consume each other's events. Use
+`--no-watch` to run the cockpit seed-only without polling.
