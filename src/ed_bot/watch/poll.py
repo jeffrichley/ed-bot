@@ -21,8 +21,11 @@ def poll(
     store: WatchAlertStore,
     play: PlayFn,
     sound_files: dict,
+    on_event: "Callable[..., None] | None" = None,
 ) -> None:
-    """Run one poll. Side-effects: emit() on stdout, play() sound, store.record()."""
+    """Run one poll. Side-effects: on_event() per actionable event (defaults to
+    the stdout `emit`), play() sound, store.record()."""
+    emit_event = on_event if on_event is not None else emit
     threads = fetch(course_id)
     log.debug("Fetched %d threads for course %d", len(threads), course_id)
 
@@ -61,7 +64,7 @@ def poll(
 
         # Actionable: play sound + emit JSON + record.
         play(kind, sound_files)
-        emit(
+        emit_event(
             kind,
             thread_id=thread_id,
             number=t["number"],

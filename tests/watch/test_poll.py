@@ -176,6 +176,35 @@ def test_poll_silent_when_only_updated_at_ticks_no_replies(store, sound_files, c
     assert capsys.readouterr().out == ""
 
 
+def test_poll_calls_on_event_instead_of_stdout(tmp_path, capsys):
+    """A custom on_event receives the event fields; stdout stays quiet."""
+    from ed_bot.watch.poll import poll
+    from ed_bot.watch.state import WatchAlertStore
+
+    captured = []
+
+    def fetch(cid):
+        return [{
+            "thread_id": 555, "number": 12, "title": "Bollinger help",
+            "category": "Project 6 | Indicators", "updated_at": "2026-06-01T00:00:00+00:00",
+            "reply_count": 0, "is_answered": False,
+        }]
+
+    store = WatchAlertStore(tmp_path / "wa.db")
+    poll(course_id=99, fetch=fetch, store=store, play=lambda *a, **k: None,
+         sound_files={}, on_event=lambda kind, **f: captured.append((kind, f)))
+    store.close()
+
+    assert len(captured) == 1
+    kind, fields = captured[0]
+    assert kind == "new_thread"
+    assert fields["thread_id"] == 555
+    assert fields["number"] == 12
+    assert fields["title"] == "Bollinger help"
+    # Nothing was written to stdout because on_event was provided.
+    assert capsys.readouterr().out == ""
+
+
 def test_poll_dedup_silence_preserves_kind_across_multiple_polls(store, sound_files, capsys):
     """Regression: silencing a re-emit must not overwrite last_alert_kind to
     'silent', or the next poll's guard check (prev_kind == current_kind)
