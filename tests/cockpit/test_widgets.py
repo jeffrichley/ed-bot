@@ -45,16 +45,19 @@ def test_render_draft_shows_guardrail_warnings():
     assert "18/38" in text
 
 
-def test_render_draft_shows_original_forum_content_when_present():
+def test_render_draft_shows_full_forum_thread_when_present():
     d = DraftPayload(thread_id=8100207, number=207,
                      question="short paraphrase",
-                     original_content="My report is 8 pages but page 8 is blank. "
-                     "Will the page limit cost me points?",
+                     original_content="student: My report is 8 pages but page 8 "
+                     "is blank. Will the page limit cost me points?\n\n"
+                     "staff: Please check the syllabus.",
                      body="You're fine, page 8 is blank.")
     text = render_draft(d)
-    # The reviewer reads the student's actual post, not just the paraphrase.
+    # The reviewer reads the whole conversation (post + replies), not just a
+    # paraphrase of the opening question.
     assert "page 8 is blank" in text
-    assert "ORIGINAL POST" in text
+    assert "Please check the syllabus." in text
+    assert "FORUM THREAD" in text
     assert "PROPOSED ANSWER" in text
 
 

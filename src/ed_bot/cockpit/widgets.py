@@ -37,7 +37,7 @@ def render_draft(d: DraftPayload) -> str:
         f"#{d.number}  ({d.project or 'unknown project'})  conf: {d.confidence}",
     ]
     if d.original_content.strip():
-        lines += ["", "─── ORIGINAL POST ───", d.original_content.strip()]
+        lines += ["", "─── FORUM THREAD ───", d.original_content.strip()]
     else:
         lines += ["", f"Q: {d.question}"]
     lines += ["", "─── PROPOSED ANSWER ───", d.body]
