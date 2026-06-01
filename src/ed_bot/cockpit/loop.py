@@ -17,7 +17,7 @@ from ed_bot.cockpit.models import (
 DraftFn = Callable[..., Awaitable[DraftPayload]]
 Emit = Callable[[Any], None]
 PostFn = Callable[..., Awaitable[ActionResult]]
-IsAnsweredFn = Callable[[int], Awaitable[bool]]
+IsAnsweredFn = Callable[[int], Awaitable[bool]]  # called with thread_id
 ChatFn = Callable[..., Awaitable[str]]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
@@ -147,16 +147,20 @@ class CockpitLoop:
         payload = self._drafts.get(number)
         if payload is None:
             return ActionResult(thread_id=0, ok=False, message="no draft to post")
-        if self._is_answered_fn is not None and await self._is_answered_fn(number):
+        # Staleness guard applies ONLY to new top-level answers. A follow-up
+        # reply legitimately targets an already-answered thread, so is_answered
+        # must not block it.
+        if (payload.post_kind == "answer" and self._is_answered_fn is not None
+                and await self._is_answered_fn(payload.thread_id)):
             self._emit(StatusUpdate(line=f"#{number} already answered, skipped"))
             return ActionResult(thread_id=payload.thread_id, ok=False,
                                 message="thread already answered, not posting")
         assert self._post_fn is not None, "post_fn required to approve"
         res = await self._post_fn(
-            number=number, body=payload.body, post_kind=payload.post_kind,
-            target_comment_id=payload.target_comment_id,
+            thread_id=payload.thread_id, number=number, body=payload.body,
+            post_kind=payload.post_kind, target_comment_id=payload.target_comment_id,
         )
-        if res.ok:
+        if res.ok and number in self._items:
             self._items[number] = self._items[number].model_copy(
                 update={"status": "posted"})
             self._emit(StatusUpdate(line=f"posted #{number}"))

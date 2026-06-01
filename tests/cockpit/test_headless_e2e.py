@@ -20,11 +20,11 @@ async def test_event_to_post_round_trip():
         return DraftPayload(thread_id=8100000 + number, number=number,
                             question="q", body="clean answer", confidence="HIGH")
 
-    async def post_fn(*, number, body, post_kind, target_comment_id):
-        return ActionResult(thread_id=8100000 + number, ok=True, posted_id=42,
+    async def post_fn(*, thread_id, number, body, post_kind, target_comment_id):
+        return ActionResult(thread_id=thread_id, ok=True, posted_id=42,
                             accepted=True, message="ok")
 
-    async def is_answered_fn(number):
+    async def is_answered_fn(thread_id):
         return False
 
     loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=draft_fn,
