@@ -14,5 +14,11 @@ def test_build_options_loads_project_and_preset():
     assert opts.setting_sources == ["project"]
     assert opts.skills == "all"
     assert opts.cwd == "/some/ed/dir"
-    assert opts.permission_mode == "acceptEdits"
+    # bypassPermissions so the agent can run ed-api/qmd (Bash) headlessly.
+    assert opts.permission_mode == "bypassPermissions"
     assert opts.output_format == {"type": "json_schema", "schema": schema}
+    # The agent must be granted access to ~/.ed-bot (knowledge base, playbook,
+    # guardrails) beyond cwd, or it can't load guardrails / search the KB.
+    from pathlib import Path
+    ed_bot_dir = str(Path("~/.ed-bot").expanduser())
+    assert ed_bot_dir in opts.add_dirs

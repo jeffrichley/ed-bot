@@ -9,9 +9,16 @@ spike was missing.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
+
+# The agent's tools and knowledge live in ~/.ed-bot (config, knowledge base,
+# playbook, guardrails). The SDK confines file access to cwd by default, so we
+# must explicitly grant access to this directory or the agent cannot load
+# guardrails or search the KB.
+_ED_BOT_DIR = str(Path("~/.ed-bot").expanduser())
 
 # Hard restatement layered on top of the loaded CLAUDE.md, emphasizing the two
 # rules the spike found the agent skipped on a bare one-shot call.
@@ -31,7 +38,12 @@ def build_options(*, schema: dict[str, Any], cwd: str) -> ClaudeAgentOptions:
         setting_sources=["project"],
         skills="all",
         cwd=cwd,
-        permission_mode="acceptEdits",
+        add_dirs=[_ED_BOT_DIR],
+        # bypassPermissions so the agent can run its tools (ed-api/qmd via Bash)
+        # without a prompt in this headless cockpit. Acceptable here: it's our
+        # own agent against our own tools, and the human reviews every draft
+        # before it posts. acceptEdits only auto-approves file edits, not Bash.
+        permission_mode="bypassPermissions",
         output_format={"type": "json_schema", "schema": schema},
     )
 
@@ -50,8 +62,13 @@ _DRAFT_PROMPT = """A forum thread needs an answer. Run the full workflow for \
 EdStem thread #{number} in course {course_id}: fetch the thread with ed-api, \
 search the knowledge base, load the project guardrail, draft an answer, and run \
 the humanizer. Return only the final post-humanizer answer in the structured \
-shape. If you cannot fetch the thread or are unsure, return a body beginning \
-with "NEEDS HUMAN".""".strip()
+shape. In the `original_content` field, put the FULL thread as fetched from \
+ed-api in plain text: the student's opening post followed by every comment and \
+reply already on the thread, in order, each labeled with who wrote it (e.g. \
+"student", "staff", or the author name) so the human reviewer can read the \
+whole conversation alongside your draft. Do not summarize it; include the \
+verbatim text. If you cannot fetch the thread or are unsure, return a body \
+beginning with "NEEDS HUMAN".""".strip()
 
 _GUARDRAIL_DIR = Path("~/.ed-bot/playbook/guardrails").expanduser()
 

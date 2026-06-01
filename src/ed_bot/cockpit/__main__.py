@@ -48,12 +48,19 @@ def build_seed_event(number: int, course_id: int) -> WatcherEvent:
     )
 
 
+def parse_seed_numbers(raw: str | None) -> list[int]:
+    """Parse a --seed value ('222' or '222,225,226') into a list of ints."""
+    if not raw:
+        return []
+    return [int(part.strip()) for part in raw.split(",") if part.strip()]
+
+
 def main() -> None:  # pragma: no cover - thin live wiring
     from ed_bot.cockpit.app import CockpitApp
 
     parser = argparse.ArgumentParser(prog="ed_bot.cockpit")
-    parser.add_argument("--seed", type=int, default=None,
-                        help="inject a WatcherEvent for this thread number on startup")
+    parser.add_argument("--seed", type=str, default=None,
+                        help="thread number(s) to seed on startup, comma-separated")
     args = parser.parse_args()
 
     cwd = str(ed_working_dir())
@@ -68,11 +75,15 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      post_fn=None, is_answered_fn=None, fetch_events=None,
                      chat_fn=chat_fn)
 
-    if args.seed is not None:
-        seed_event = build_seed_event(args.seed, course_id)
-        # Inject the seed after the first refresh so the placeholders paint
-        # first and the agent draft updates the display when it returns.
-        app.call_after_refresh(app.inject_event, seed_event)
+    seed_numbers = parse_seed_numbers(args.seed)
+    if seed_numbers:
+        def _seed() -> None:
+            # draft_event is a @work worker (non-blocking): the rows render
+            # immediately and each draft runs in the background, so the UI and
+            # input stay responsive during the live SDK calls.
+            for number in seed_numbers:
+                app.draft_event(build_seed_event(number, course_id))
+        app.call_after_refresh(_seed)
 
     app.run()
 

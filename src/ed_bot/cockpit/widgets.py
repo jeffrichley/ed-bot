@@ -4,13 +4,14 @@ The render helpers are module functions so they can be unit-tested without
 mounting an app. The widgets are thin wrappers the app updates."""
 from __future__ import annotations
 
-from textual.widgets import Static
+from textual.widgets import Static, OptionList
+from textual.widgets.option_list import Option
 from textual.containers import VerticalScroll
 
 from ed_bot.cockpit.models import QueueItem, DraftPayload, ChatMessage
 
 
-def render_queue_line(item: QueueItem) -> str:
+def queue_option_text(item: QueueItem) -> str:
     """One line for the queue rail."""
     mark = "!" if item.kind == "escalation" else " "
     state = {
@@ -24,21 +25,27 @@ def render_queue_line(item: QueueItem) -> str:
     return f"{mark} #{item.number} {item.title} [{state}]{posted}".rstrip()
 
 
+# Backwards-compatible alias (older callers/tests).
+render_queue_line = queue_option_text
+
+
 def render_draft(d: DraftPayload) -> str:
-    """The center-panel text for a selected draft."""
+    """The center-panel text for a selected draft: the original forum post, then
+    the proposed answer. Action keys are NOT shown here — they live in the
+    footer (the app's BINDINGS)."""
     lines = [
         f"#{d.number}  ({d.project or 'unknown project'})  conf: {d.confidence}",
-        "",
-        f"Q: {d.question}",
-        "",
-        d.body,
     ]
+    if d.original_content.strip():
+        lines += ["", "─── FORUM THREAD ───", d.original_content.strip()]
+    else:
+        lines += ["", f"Q: {d.question}"]
+    lines += ["", "─── PROPOSED ANSWER ───", d.body]
     if d.guardrails_checked:
         lines += ["", f"guardrails checked: {', '.join(d.guardrails_checked)}"]
     if d.guardrail_warnings:
         lines += ["", "ADVISORY:"]
         lines += [f"  - {w}" for w in d.guardrail_warnings]
-    lines += ["", "[a]pprove  [e]dit  [r]eject  [f]lag  [s]kip"]
     return "\n".join(lines)
 
 
@@ -58,14 +65,24 @@ def render_chat_line(msg: ChatMessage) -> str:
     return "\n".join(out)
 
 
-class QueueRail(Static):
-    """Left rail: the list of actionable threads."""
+class QueueRail(OptionList):
+    """Left rail: a selectable list of actionable threads.
+
+    Each option's id is the thread number (str). Re-rendering on a QueueUpdate
+    preserves the current highlight so navigation isn't disrupted."""
 
     def show(self, items: list[QueueItem]) -> None:
+        prev = self.highlighted
+        self.clear_options()
         if not items:
-            self.update("(queue empty)")
+            self.add_option(Option("(queue empty)", id="__empty__"))
             return
-        self.update("\n".join(render_queue_line(i) for i in items))
+        for item in items:
+            self.add_option(Option(queue_option_text(item), id=str(item.number)))
+        if prev is not None and prev < len(items):
+            self.highlighted = prev
+        elif items:
+            self.highlighted = 0
 
 
 class DraftViewer(Static):

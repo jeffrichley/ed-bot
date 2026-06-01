@@ -46,3 +46,12 @@ async def test_build_chat_fn_accepts_history_and_forwards_it():
                           history=[("you", "my color is purple")])
     assert reply == "ok"
     assert seen["history"] == [("you", "my color is purple")]
+
+
+def test_parse_seed_numbers_handles_list():
+    from ed_bot.cockpit.__main__ import parse_seed_numbers
+    assert parse_seed_numbers("222") == [222]
+    assert parse_seed_numbers("222,225,226") == [222, 225, 226]
+    assert parse_seed_numbers("222, 225 ,226") == [222, 225, 226]
+    assert parse_seed_numbers(None) == []
+    assert parse_seed_numbers("") == []

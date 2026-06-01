@@ -45,6 +45,32 @@ def test_render_draft_shows_guardrail_warnings():
     assert "18/38" in text
 
 
+def test_render_draft_shows_full_forum_thread_when_present():
+    d = DraftPayload(thread_id=8100207, number=207,
+                     question="short paraphrase",
+                     original_content="student: My report is 8 pages but page 8 "
+                     "is blank. Will the page limit cost me points?\n\n"
+                     "staff: Please check the syllabus.",
+                     body="You're fine, page 8 is blank.")
+    text = render_draft(d)
+    # The reviewer reads the whole conversation (post + replies), not just a
+    # paraphrase of the opening question.
+    assert "page 8 is blank" in text
+    assert "Please check the syllabus." in text
+    assert "FORUM THREAD" in text
+    assert "PROPOSED ANSWER" in text
+
+
+def test_render_draft_omits_action_keys_they_live_in_footer():
+    # Action keys are rendered by the app's BINDINGS (the footer), not inside
+    # the draft text. Keeping them here rendered mangled (Textual markup ate the
+    # brackets) and duplicated the footer.
+    d = DraftPayload(thread_id=1, number=1, question="q", body="b")
+    text = render_draft(d)
+    assert "approve" not in text
+    assert "[a]" not in text
+
+
 def test_render_chat_line_formats_role_and_text():
     from ed_bot.cockpit.widgets import render_chat_line
     from ed_bot.cockpit.models import ChatMessage
@@ -66,3 +92,11 @@ def test_render_chat_line_collapses_blank_lines_and_indents():
     assert lines[0].startswith("ed-bot ▸ First line.")
     assert "Second paragraph." in lines[1]
     assert lines[1].startswith(" ")  # continuation indented
+
+
+def test_queue_rail_is_option_list_and_renders_items():
+    from textual.widgets import OptionList
+    from ed_bot.cockpit.widgets import QueueRail, queue_option_text
+    assert issubclass(QueueRail, OptionList)
+    text = queue_option_text(_item(number=207, title="Figure 1 graph"))
+    assert "207" in text and "Figure 1 graph" in text
