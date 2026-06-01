@@ -10,13 +10,14 @@ from typing import Any, Awaitable, Callable, Optional
 
 from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueItem, QueueUpdate, DraftPayload, StatusUpdate,
-    ActionResult,
+    ActionResult, ChatMessage,
 )
 
 DraftFn = Callable[..., Awaitable[DraftPayload]]
 Emit = Callable[[Any], None]
 PostFn = Callable[..., Awaitable[ActionResult]]
 IsAnsweredFn = Callable[[int], Awaitable[bool]]
+ChatFn = Callable[..., Awaitable[str]]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -24,13 +25,15 @@ _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 class CockpitLoop:
     def __init__(self, *, cwd: str, course_id: int, draft_fn: DraftFn,
                  emit: Emit, post_fn: "PostFn | None" = None,
-                 is_answered_fn: "IsAnsweredFn | None" = None) -> None:
+                 is_answered_fn: "IsAnsweredFn | None" = None,
+                 chat_fn: "ChatFn | None" = None) -> None:
         self._cwd = cwd
         self._course_id = course_id
         self._draft_fn = draft_fn
         self._emit = emit
         self._post_fn = post_fn
         self._is_answered_fn = is_answered_fn
+        self._chat_fn = chat_fn
         self._items: dict[int, QueueItem] = {}
         self._drafts: dict[int, DraftPayload] = {}
 
@@ -92,7 +95,26 @@ class CockpitLoop:
             return self._drafts.get(cmd.thread)
         if cmd.intent == "approve" and cmd.thread is not None:
             return await self._approve(cmd.thread)
+        if cmd.intent == "check_forum":
+            self._emit_queue_summary()
+            return None
+        if cmd.intent == "freeform" and self._chat_fn is not None:
+            reply = await self._chat_fn(
+                text=cmd.text or "", cwd=self._cwd, course_id=self._course_id,
+            )
+            self._emit(ChatMessage(role="ed-bot", text=reply))
+            return None
         return None
+
+    def _emit_queue_summary(self) -> None:
+        items = list(self._items.values())
+        if not items:
+            self._emit(ChatMessage(role="ed-bot", text="The queue is empty."))
+            return
+        parts = [f"#{i.number} ({i.draft_state})" for i in items]
+        self._emit(ChatMessage(
+            role="ed-bot",
+            text=f"{len(items)} in queue: " + ", ".join(parts)))
 
     async def _approve(self, number: int) -> ActionResult:
         payload = self._drafts.get(number)
