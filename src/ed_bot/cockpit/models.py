@@ -87,6 +87,9 @@ class DraftPayload(BaseModel):
     post_kind: PostKind = "answer"
     target_comment_id: Optional[int] = None
     guardrail_warnings: list[str] = []
+    # The student's actual forum post (plain text), so the reviewer can read the
+    # original alongside the draft. Not pre-humanizer content.
+    original_content: str = ""
 
 
 class StatusUpdate(BaseModel):

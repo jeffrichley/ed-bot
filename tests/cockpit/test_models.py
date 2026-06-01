@@ -78,10 +78,13 @@ def test_draft_payload_is_humanized_only():
     expected = {
         "thread_id", "number", "question", "body", "is_canned", "project",
         "guardrails_checked", "confidence", "post_kind", "target_comment_id",
-        "guardrail_warnings",
+        "guardrail_warnings", "original_content",
     }
     assert set(DraftPayload.model_fields) == expected
     assert "body" in expected
+    # original_content holds the student's actual forum post for review; it is
+    # NOT pre-humanizer draft content, so the humanized-only invariant stands.
+    assert "original_content" in expected
 
 
 def test_draft_payload_roundtrip():

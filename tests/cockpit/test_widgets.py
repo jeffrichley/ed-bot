@@ -45,6 +45,29 @@ def test_render_draft_shows_guardrail_warnings():
     assert "18/38" in text
 
 
+def test_render_draft_shows_original_forum_content_when_present():
+    d = DraftPayload(thread_id=8100207, number=207,
+                     question="short paraphrase",
+                     original_content="My report is 8 pages but page 8 is blank. "
+                     "Will the page limit cost me points?",
+                     body="You're fine, page 8 is blank.")
+    text = render_draft(d)
+    # The reviewer reads the student's actual post, not just the paraphrase.
+    assert "page 8 is blank" in text
+    assert "ORIGINAL POST" in text
+    assert "PROPOSED ANSWER" in text
+
+
+def test_render_draft_omits_action_keys_they_live_in_footer():
+    # Action keys are rendered by the app's BINDINGS (the footer), not inside
+    # the draft text. Keeping them here rendered mangled (Textual markup ate the
+    # brackets) and duplicated the footer.
+    d = DraftPayload(thread_id=1, number=1, question="q", body="b")
+    text = render_draft(d)
+    assert "approve" not in text
+    assert "[a]" not in text
+
+
 def test_render_chat_line_formats_role_and_text():
     from ed_bot.cockpit.widgets import render_chat_line
     from ed_bot.cockpit.models import ChatMessage

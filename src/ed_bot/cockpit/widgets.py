@@ -30,20 +30,22 @@ render_queue_line = queue_option_text
 
 
 def render_draft(d: DraftPayload) -> str:
-    """The center-panel text for a selected draft."""
+    """The center-panel text for a selected draft: the original forum post, then
+    the proposed answer. Action keys are NOT shown here — they live in the
+    footer (the app's BINDINGS)."""
     lines = [
         f"#{d.number}  ({d.project or 'unknown project'})  conf: {d.confidence}",
-        "",
-        f"Q: {d.question}",
-        "",
-        d.body,
     ]
+    if d.original_content.strip():
+        lines += ["", "─── ORIGINAL POST ───", d.original_content.strip()]
+    else:
+        lines += ["", f"Q: {d.question}"]
+    lines += ["", "─── PROPOSED ANSWER ───", d.body]
     if d.guardrails_checked:
         lines += ["", f"guardrails checked: {', '.join(d.guardrails_checked)}"]
     if d.guardrail_warnings:
         lines += ["", "ADVISORY:"]
         lines += [f"  - {w}" for w in d.guardrail_warnings]
-    lines += ["", "[a]pprove  [e]dit  [r]eject  [f]lag  [s]kip"]
     return "\n".join(lines)
 
 

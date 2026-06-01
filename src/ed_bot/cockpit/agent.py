@@ -62,8 +62,11 @@ _DRAFT_PROMPT = """A forum thread needs an answer. Run the full workflow for \
 EdStem thread #{number} in course {course_id}: fetch the thread with ed-api, \
 search the knowledge base, load the project guardrail, draft an answer, and run \
 the humanizer. Return only the final post-humanizer answer in the structured \
-shape. If you cannot fetch the thread or are unsure, return a body beginning \
-with "NEEDS HUMAN".""".strip()
+shape. In the `original_content` field, put the student's actual post text as \
+fetched from ed-api (the full question body, plain text) so the human reviewer \
+can read the original alongside your draft; do not summarize it there. If you \
+cannot fetch the thread or are unsure, return a body beginning with \
+"NEEDS HUMAN".""".strip()
 
 _GUARDRAIL_DIR = Path("~/.ed-bot/playbook/guardrails").expanduser()
 
