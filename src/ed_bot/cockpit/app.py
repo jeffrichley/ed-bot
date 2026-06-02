@@ -7,6 +7,7 @@ workers. (Hotkeys and chat input arrive in the next task.)"""
 from __future__ import annotations
 
 import asyncio
+import webbrowser
 from typing import Any, Optional
 
 from textual.app import App, ComposeResult
@@ -32,6 +33,7 @@ class CockpitApp(App):
         ("r", "act('reject')", "reject"),
         ("f", "act('flag')", "flag"),
         ("s", "act('skip')", "skip"),
+        ("o", "open_browser", "open in browser"),
     ]
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
@@ -121,12 +123,37 @@ class CockpitApp(App):
         if option_id is None or option_id == "__empty__":
             return
         self.inject_command(UserCommand(intent="open", thread=int(option_id)))
+        # Selecting moved focus to the queue rail (an OptionList). Return it to
+        # the chat input so the user can keep typing -- otherwise keystrokes go
+        # to the rail and the chat looks frozen.
+        self.query_one("#chat", Input).focus()
 
     def action_act(self, intent: str) -> None:
         if self._active_thread is None:
             self.query_one(StatusBar).show("no active thread")
             return
         self.inject_command(UserCommand(intent=intent, thread=self._active_thread))
+
+    def _thread_url(self, number: int) -> Optional[str]:
+        """The EdStem discussion URL for a queued thread number, or None if the
+        thread isn't in the queue (we need its global thread_id)."""
+        item = self.loop.queue_item(number)
+        if item is None:
+            return None
+        return (f"https://edstem.org/us/courses/{self._course_id}"
+                f"/discussion/{item.thread_id}")
+
+    def action_open_browser(self) -> None:
+        """Open the active thread in the default web browser."""
+        if self._active_thread is None:
+            self.query_one(StatusBar).show("no active thread to open")
+            return
+        url = self._thread_url(self._active_thread)
+        if url is None:
+            self.query_one(StatusBar).show("no thread to open")
+            return
+        webbrowser.open(url)
+        self.query_one(StatusBar).show(f"opened #{self._active_thread} in browser")
 
     # --- feeding the loop ---
     async def inject_event(self, event: WatcherEvent) -> None:
