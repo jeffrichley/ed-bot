@@ -103,6 +103,23 @@ async def test_open_browser_opens_active_thread(monkeypatch):
         assert opened == ["https://edstem.org/us/courses/98559/discussion/8100207"]
 
 
+async def test_open_browser_uses_highlight_while_drafting(monkeypatch):
+    """Open the highlighted thread even before its draft is opened (i.e. while
+    it is still drafting). Needs only the queued thread's global id."""
+    opened = []
+    monkeypatch.setattr("ed_bot.cockpit.app.webbrowser.open", opened.append)
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await _seed_item(app, pilot, 207)
+        rail = app.query_one(QueueRail)
+        rail.focus()
+        await pilot.pause()
+        rail.highlighted = 0
+        assert app._active_thread is None  # never opened the draft
+        app.action_open_browser()
+        assert opened == ["https://edstem.org/us/courses/98559/discussion/8100207"]
+
+
 async def test_open_browser_no_active_thread_is_safe(monkeypatch):
     opened = []
     monkeypatch.setattr("ed_bot.cockpit.app.webbrowser.open", opened.append)

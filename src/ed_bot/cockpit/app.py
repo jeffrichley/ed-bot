@@ -154,17 +154,33 @@ class CockpitApp(App):
         return (f"https://edstem.org/us/courses/{self._course_id}"
                 f"/discussion/{item.thread_id}")
 
+    def _target_thread_number(self) -> Optional[int]:
+        """The thread to act on: the one highlighted in the queue, else the
+        open draft. Uses the highlight so open-in-browser works as soon as a
+        thread is queued, even while it is still drafting."""
+        rail = self.query_one(QueueRail)
+        idx = rail.highlighted
+        if idx is not None:
+            try:
+                option = rail.get_option_at_index(idx)
+            except Exception:  # noqa: BLE001 - index can be stale mid-rebuild
+                option = None
+            if option is not None and option.id not in (None, "__empty__"):
+                return int(option.id)
+        return self._active_thread
+
     def action_open_browser(self) -> None:
-        """Open the active thread in the default web browser."""
-        if self._active_thread is None:
-            self.query_one(StatusBar).show("no active thread to open")
-            return
-        url = self._thread_url(self._active_thread)
+        """Open the highlighted (or active) thread in the default web browser.
+
+        Works while a thread is still drafting: the URL needs only the thread's
+        global id, which the queue item carries from the moment it is queued."""
+        number = self._target_thread_number()
+        url = self._thread_url(number) if number is not None else None
         if url is None:
             self.query_one(StatusBar).show("no thread to open")
             return
         webbrowser.open(url)
-        self.query_one(StatusBar).show(f"opened #{self._active_thread} in browser")
+        self.query_one(StatusBar).show(f"opened #{number} in browser")
 
     # --- feeding the loop ---
     async def inject_event(self, event: WatcherEvent) -> None:
