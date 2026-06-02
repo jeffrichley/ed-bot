@@ -11,12 +11,12 @@ def _make_app(posted):
         return DraftPayload(thread_id=8100000 + number, number=number,
                             question="q", body="clean body", confidence="HIGH")
 
-    async def post_fn(*, number, body, post_kind, target_comment_id):
+    async def post_fn(*, thread_id, number, body, post_kind, target_comment_id):
         posted.append(number)
-        return ActionResult(thread_id=8100000 + number, ok=True, posted_id=9,
+        return ActionResult(thread_id=thread_id, ok=True, posted_id=9,
                             accepted=True, message="ok")
 
-    async def is_answered_fn(number):
+    async def is_answered_fn(thread_id):
         return False
 
     return CockpitApp(cwd=".", course_id=98559, draft_fn=draft_fn,

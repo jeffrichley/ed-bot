@@ -67,8 +67,9 @@ ed-api in plain text: the student's opening post followed by every comment and \
 reply already on the thread, in order, each labeled with who wrote it (e.g. \
 "student", "staff", or the author name) so the human reviewer can read the \
 whole conversation alongside your draft. Do not summarize it; include the \
-verbatim text. If you cannot fetch the thread or are unsure, return a body \
-beginning with "NEEDS HUMAN".""".strip()
+verbatim text. Set the `thread_id` field to the thread's GLOBAL id (the `id` \
+from `ed-api thread get`), not the course-local number. If you cannot fetch \
+the thread or are unsure, return a body beginning with "NEEDS HUMAN".""".strip()
 
 _GUARDRAIL_DIR = Path("~/.ed-bot/playbook/guardrails").expanduser()
 

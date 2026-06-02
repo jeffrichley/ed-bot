@@ -6,11 +6,36 @@ from ed_bot.cockpit.models import WatcherEvent
 
 
 def test_build_seed_event_targets_thread_number():
-    ev = build_seed_event(222, 98559)
+    ev = build_seed_event(222, 98559, 8100222)
     assert isinstance(ev, WatcherEvent)
     assert ev.number == 222
+    assert ev.thread_id == 8100222
     assert ev.kind == "new_thread"
     assert "98559" in ev.url and "222" in ev.url
+
+
+def test_resolve_seed_thread_id_returns_global_id():
+    """The seed path must resolve the course-local number to the real global
+    EdStem thread id (so reconciliation routes seeded posts correctly), and
+    must query by (course_id, number)."""
+    from ed_bot.cockpit.__main__ import resolve_seed_thread_id
+
+    calls = {}
+
+    class _Thread:
+        id = 8100222
+
+    class _ThreadsResource:
+        def get_by_number(self, course_id, number):
+            calls["args"] = (course_id, number)
+            return _Thread()
+
+    class _Client:
+        threads = _ThreadsResource()
+
+    tid = resolve_seed_thread_id(_Client(), 98559, 222)
+    assert tid == 8100222
+    assert calls["args"] == (98559, 222)
 
 
 @pytest.mark.anyio
@@ -55,3 +80,21 @@ def test_parse_seed_numbers_handles_list():
     assert parse_seed_numbers("222, 225 ,226") == [222, 225, 226]
     assert parse_seed_numbers(None) == []
     assert parse_seed_numbers("") == []
+
+
+def test_resolve_watch_interval_defaults_when_no_window():
+    from ed_bot.cockpit.__main__ import resolve_watch_interval
+    from ed_bot.watch.config import WatchConfig
+    cfg = WatchConfig(course_id=1, windows=[], sounds={})
+    # No matching window -> the documented default.
+    assert resolve_watch_interval(cfg) == 120.0
+
+
+def test_resolve_watch_interval_uses_window_interval():
+    from ed_bot.cockpit.__main__ import resolve_watch_interval
+    from ed_bot.watch.config import WatchConfig, Window
+    win = Window(days=["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                 start_hour=0, start_minute=0, end_hour=23, end_minute=59,
+                 interval_seconds=300)
+    cfg = WatchConfig(course_id=1, windows=[win], sounds={})
+    assert resolve_watch_interval(cfg) == 300.0

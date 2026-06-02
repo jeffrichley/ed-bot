@@ -121,14 +121,21 @@ def _has_non_staff_activity_since(detail, since_ts) -> bool:
     return False
 
 
-def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) -> Callable[[], None]:
-    """Returns a no-arg callable suitable for the scheduler.
+def build_fetch() -> Callable[[int], list[dict]]:
+    """Build the tracker-cross-referencing fetch closure used by the watch poll.
+
+    Shared by the standalone watcher (`_build_poll_fn`) and the cockpit's
+    `fetch_events` backend so the dedup / follow-up / escalation-handled logic
+    has a single source of truth.
 
     Cross-references the existing /ed-check tracker (`threads` table in the
     same DB file as watch_alerts) to populate `our_answer_id` and detect
     follow-ups on our answers. Only does a detail-fetch for threads where
     both (a) we've previously answered and (b) the reply count has grown
     since the last /ed-check scan — keeps API cost bounded.
+
+    Constructs an EdClient eagerly, so ED_API_TOKEN must be set when this is
+    called.
     """
     from ed_api import EdClient
     import sqlite3
@@ -224,6 +231,13 @@ def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) ->
                     "has_non_staff_activity_since_alert": has_non_staff_activity_since_alert,
                 })
         return results
+
+    return fetch
+
+
+def _build_poll_fn(course_id: int, store: WatchAlertStore, sound_files: dict) -> Callable[[], None]:
+    """Returns a no-arg callable suitable for the scheduler."""
+    fetch = build_fetch()
 
     def once() -> None:
         run_poll(course_id=course_id, fetch=fetch, store=store,

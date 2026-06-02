@@ -6,6 +6,7 @@ to the widgets. Forum events and user commands are fed to the loop via async
 workers. (Hotkeys and chat input arrive in the next task.)"""
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from textual.app import App, ComposeResult
@@ -15,6 +16,7 @@ from textual import work
 
 from ed_bot.cockpit.command_parser import parse_command
 from ed_bot.cockpit.loop import CockpitLoop
+from ed_bot.cockpit.watcher import watch_loop
 from ed_bot.cockpit.messages import LoopEmission
 from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
@@ -34,9 +36,13 @@ class CockpitApp(App):
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None,
-                 chat_fn=None) -> None:
+                 chat_fn=None, watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
+        self._course_id = course_id
+        self._watch_interval = watch_interval
+        self._watch_stop: Optional[asyncio.Event] = None
+        self._watch_queue: Optional[asyncio.Queue] = None
         self._active_thread: Optional[int] = None
         self.loop = CockpitLoop(
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
@@ -62,6 +68,11 @@ class CockpitApp(App):
         self.query_one(DraftViewer).show(None)
         self.query_one(StatusBar).show("ready")
         self.query_one("#chat", Input).focus()
+        if self._fetch_events is not None:
+            self._watch_stop = asyncio.Event()
+            self._watch_queue = asyncio.Queue()
+            self._run_watch_producer()
+            self._run_watch_consumer()
 
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
@@ -69,6 +80,11 @@ class CockpitApp(App):
         self.post_message(LoopEmission(payload))
 
     def on_loop_emission(self, message: LoopEmission) -> None:
+        # A watcher draft can finish during teardown (app stopped, screen
+        # detached). Its emission still rides the pump but the widgets are
+        # gone, so query_one would raise NoMatches. Drop late emissions.
+        if not self.is_running or not self._screen_stack:
+            return
         payload = message.payload
         if isinstance(payload, QueueUpdate):
             self.query_one(QueueRail).show(payload.items)
@@ -126,6 +142,26 @@ class CockpitApp(App):
         background worker so the live SDK draft never blocks the message pump.
         Drafts for different events run concurrently."""
         await self.loop.handle(event)
+
+    @work(group="watch")
+    async def _run_watch_producer(self) -> None:
+        """Poll the forum on an interval, putting events on the watch queue."""
+        await watch_loop(
+            course_id=self._course_id, queue=self._watch_queue,
+            fetch_events=self._fetch_events,
+            interval_seconds=self._watch_interval, stop=self._watch_stop,
+        )
+
+    @work(group="watch")
+    async def _run_watch_consumer(self) -> None:
+        """Drain polled events and draft each on the non-blocking draft worker."""
+        while not self._watch_stop.is_set():
+            ev = await self._watch_queue.get()
+            self.draft_event(ev)
+
+    def on_unmount(self) -> None:
+        if self._watch_stop is not None:
+            self._watch_stop.set()
 
     @work()
     async def inject_command(self, cmd: UserCommand) -> None:

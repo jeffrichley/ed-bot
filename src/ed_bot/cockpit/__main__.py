@@ -10,6 +10,7 @@ app run or network."""
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
 from ed_bot.cockpit.agent import chat_reply as _agent_chat_reply
@@ -36,13 +37,19 @@ def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
     return chat_fn
 
 
-def build_seed_event(number: int, course_id: int) -> WatcherEvent:
+def resolve_seed_thread_id(client, course_id: int, number: int) -> int:
+    """Resolve a course-local thread number to its global EdStem thread id."""
+    return client.threads.get_by_number(course_id, number).id
+
+
+def build_seed_event(number: int, course_id: int, thread_id: int) -> WatcherEvent:
     """A minimal WatcherEvent to seed a demo draft for thread ``number``.
 
-    Title/category aren't known without a fetch, so use placeholders — the agent
-    fetches the real thread by number when it drafts."""
+    ``thread_id`` is the resolved GLOBAL EdStem id (the loop reconciles drafts
+    to it for routing). Title/category aren't known without a fetch, so use
+    placeholders. The agent fetches the real thread by number when it drafts."""
     return WatcherEvent(
-        kind="new_thread", thread_id=number, number=number,
+        kind="new_thread", thread_id=thread_id, number=number,
         title=f"(seeded thread #{number})", category="Project 1 | Martingale",
         url=f"https://edstem.org/us/courses/{course_id}/discussion/{number}",
     )
@@ -55,12 +62,31 @@ def parse_seed_numbers(raw: str | None) -> list[int]:
     return [int(part.strip()) for part in raw.split(",") if part.strip()]
 
 
+def resolve_watch_interval(cfg, *, default: float = 120.0) -> float:
+    """The poll interval (seconds) for the current time window, or `default`
+    when no window matches or its interval is 'off'."""
+    win = cfg.window_for(datetime.now())
+    if win is None or win.interval_seconds is None:
+        return default
+    return float(win.interval_seconds)
+
+
 def main() -> None:  # pragma: no cover - thin live wiring
+    import pathlib
+    from ed_api import EdClient
+    from ed_bot.config import BotConfig
+    from ed_bot.watch import config as wconfig
+    from ed_bot.watch.state import WatchAlertStore
     from ed_bot.cockpit.app import CockpitApp
+    from ed_bot.cockpit.backends import (
+        build_fetch_events, build_post_fn, build_is_answered_fn,
+    )
 
     parser = argparse.ArgumentParser(prog="ed_bot.cockpit")
     parser.add_argument("--seed", type=str, default=None,
                         help="thread number(s) to seed on startup, comma-separated")
+    parser.add_argument("--no-watch", action="store_true",
+                        help="don't poll the live forum (seed-only)")
     args = parser.parse_args()
 
     cwd = str(ed_working_dir())
@@ -68,12 +94,25 @@ def main() -> None:  # pragma: no cover - thin live wiring
     draft_fn = build_draft_fn(cwd=cwd)
     chat_fn = build_chat_fn(cwd=cwd)
 
-    # NOTE: post_fn / is_answered_fn / fetch_events wrap the sync ed-api client
-    # via asyncio.to_thread in a follow-up; the app runs with auto-draft + chat
-    # working against the agent now.
+    bot_dir = pathlib.Path("~/.ed-bot").expanduser()
+    bot_cfg = BotConfig.load(bot_dir)
+    ed_bot_pkg = pathlib.Path(__file__).resolve().parents[1]  # ed_bot/
+    watch_cfg = wconfig.load(bot_dir / "watch.yaml", ed_bot_dir=ed_bot_pkg)
+
+    client = EdClient(region=bot_cfg.region)
+    post_fn = build_post_fn(client=client)
+    is_answered_fn = build_is_answered_fn(client=client)
+
+    fetch_events = None
+    if not args.no_watch:
+        store = WatchAlertStore(bot_dir / "state" / "tracker.db")
+        fetch_events = build_fetch_events(
+            store=store, sound_files=watch_cfg.sounds)
+
     app = CockpitApp(cwd=cwd, course_id=course_id, draft_fn=draft_fn,
-                     post_fn=None, is_answered_fn=None, fetch_events=None,
-                     chat_fn=chat_fn)
+                     post_fn=post_fn, is_answered_fn=is_answered_fn,
+                     fetch_events=fetch_events, chat_fn=chat_fn,
+                     watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)
     if seed_numbers:
@@ -82,7 +121,8 @@ def main() -> None:  # pragma: no cover - thin live wiring
             # immediately and each draft runs in the background, so the UI and
             # input stay responsive during the live SDK calls.
             for number in seed_numbers:
-                app.draft_event(build_seed_event(number, course_id))
+                tid = resolve_seed_thread_id(client, course_id, number)
+                app.draft_event(build_seed_event(number, course_id, tid))
         app.call_after_refresh(_seed)
 
     app.run()
