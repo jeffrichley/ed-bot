@@ -9,6 +9,7 @@ spike was missing.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -74,16 +75,44 @@ the thread or are unsure, return a body beginning with "NEEDS HUMAN".""".strip()
 _GUARDRAIL_DIR = Path("~/.ed-bot/playbook/guardrails").expanduser()
 
 
+def _scrub_conflicting_api_key() -> None:
+    """Keep a stray ANTHROPIC_API_KEY out of the Agent SDK subprocess.
+
+    The cockpit authenticates the agent via the Max-plan subscription, not an
+    API key. But constructing ``EdClient`` (for posting) calls ``load_dotenv``,
+    which loads the project ``.env`` (it carries ``ED_API_TOKEN``) and ALSO
+    injects whatever else lives there, including an ``ANTHROPIC_API_KEY``. The
+    SDK subprocess inherits the process environment, so a leaked (and often
+    stale) key reaches the CLI and it fails with "Invalid API key". The SDK
+    merges ``options.env`` ON TOP of the inherited env and offers no way to
+    unset an inherited var, so the only reliable fix is to drop it here before
+    launching the query.
+    """
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
 async def default_sdk_query(*, prompt: str, schema: dict, cwd: str) -> dict:
     """Real one-shot structured SDK call with the correct cockpit options."""
+    _scrub_conflicting_api_key()
     options = build_options(schema=schema, cwd=cwd)
     result: dict | None = None
+    final: ResultMessage | None = None
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, ResultMessage):
+            final = message
             result = message.structured_output
             break
     if result is None:
-        raise RuntimeError("SDK returned no structured_output")
+        # Surface WHY (turn limit, mid-run error, etc.) instead of a generic
+        # message, so a failed draft is diagnosable from the cockpit status line.
+        if final is not None:
+            raise RuntimeError(
+                f"SDK returned no structured_output "
+                f"(subtype={getattr(final, 'subtype', None)!r}, "
+                f"is_error={getattr(final, 'is_error', None)!r}): "
+                f"{getattr(final, 'result', None)!r}"
+            )
+        raise RuntimeError("SDK returned no result message")
     return result
 
 
@@ -146,6 +175,7 @@ def _build_chat_prompt(course_id: int, history: list[tuple[str, str]],
 
 async def default_sdk_text(*, prompt: str, cwd: str) -> str:
     """Plain (non-structured) SDK call; returns the concatenated assistant text."""
+    _scrub_conflicting_api_key()
     options = build_options(schema={"type": "object"}, cwd=cwd)
     # Reuse the correct cockpit config but ignore structured output for chat.
     options.output_format = None
