@@ -9,7 +9,10 @@ def test_build_options_loads_project_and_preset():
     assert opts.system_prompt["type"] == "preset"
     assert opts.system_prompt["preset"] == "claude_code"
     assert "guardrail" in opts.system_prompt["append"].lower()
-    assert "humanizer" in opts.system_prompt["append"].lower()
+    # The append still mandates humanizing; the full rule list is injected into
+    # the draft prompt (see test_agent_humanizer), so the append references the
+    # human-writing requirement rather than a "humanizer" tool.
+    assert "humanized" in opts.system_prompt["append"].lower()
     # project settings (CLAUDE.md, .claude/skills) load
     assert opts.setting_sources == ["project"]
     assert opts.skills == "all"
