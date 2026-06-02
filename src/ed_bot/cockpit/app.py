@@ -34,6 +34,7 @@ class CockpitApp(App):
         ("f", "act('flag')", "flag"),
         ("s", "act('skip')", "skip"),
         ("o", "open_browser", "open in browser"),
+        ("escape", "toggle_focus", "chat / actions"),
     ]
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
@@ -123,10 +124,20 @@ class CockpitApp(App):
         if option_id is None or option_id == "__empty__":
             return
         self.inject_command(UserCommand(intent="open", thread=int(option_id)))
-        # Selecting moved focus to the queue rail (an OptionList). Return it to
-        # the chat input so the user can keep typing -- otherwise keystrokes go
-        # to the rail and the chat looks frozen.
-        self.query_one("#chat", Input).focus()
+        # Keep focus on the queue rail (action mode) so the a/e/r/f/s/o hotkeys
+        # act on the thread you just opened. Press Esc to jump to the chat box.
+
+    def action_toggle_focus(self) -> None:
+        """Switch between the chat box (typing) and the queue (action hotkeys).
+
+        The single-letter actions and the chat input share the keyboard, so we
+        keep them in separate focus contexts: when the chat is focused you type,
+        when the queue is focused a/e/r/f/s/o act. Esc flips between them."""
+        chat = self.query_one("#chat", Input)
+        if self.focused is chat:
+            self.query_one(QueueRail).focus()
+        else:
+            chat.focus()
 
     def action_act(self, intent: str) -> None:
         if self._active_thread is None:
