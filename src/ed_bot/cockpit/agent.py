@@ -9,6 +9,7 @@ spike was missing.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,15 +20,28 @@ from claude_agent_sdk import ClaudeAgentOptions
 # must explicitly grant access to this directory or the agent cannot load
 # guardrails or search the KB.
 _ED_BOT_DIR = str(Path("~/.ed-bot").expanduser())
+# The humanizer skill file the agent reads on demand (progressive disclosure).
+_HUMANIZER_SKILL_PATH = Path("~/.claude/skills/humanizer/SKILL.md").expanduser()
+
+
+def _agent_add_dirs() -> list[str]:
+    """Directories the agent may read beyond cwd: the ed-bot knowledge base, and
+    the humanizer skill's directory (so it can read the rules when writing an
+    answer). The humanizer dir is included only when present."""
+    dirs = [_ED_BOT_DIR]
+    if _HUMANIZER_SKILL_PATH.exists():
+        dirs.append(str(_HUMANIZER_SKILL_PATH.parent))
+    return dirs
 
 # Hard restatement layered on top of the loaded CLAUDE.md, emphasizing the two
 # rules the spike found the agent skipped on a bare one-shot call.
 _APPEND = (
     "You are the ed-bot forum assistant operating the cockpit. Before drafting "
     "any answer you MUST load the relevant project guardrail file under "
-    "~/.ed-bot/playbook/guardrails/ and respect its Never-Reveal items, and you "
-    "MUST run the drafted answer through the humanizer before returning it. "
-    "Return only the final, post-humanizer text in the required structured shape."
+    "~/.ed-bot/playbook/guardrails/ and respect its Never-Reveal items, and your "
+    "final answer MUST read like a real human TA wrote it by applying the "
+    "anti-AI-writing rules included with the drafting task. Return only the "
+    "final, humanized text in the required structured shape."
 )
 
 
@@ -38,7 +52,7 @@ def build_options(*, schema: dict[str, Any], cwd: str) -> ClaudeAgentOptions:
         setting_sources=["project"],
         skills="all",
         cwd=cwd,
-        add_dirs=[_ED_BOT_DIR],
+        add_dirs=_agent_add_dirs(),
         # bypassPermissions so the agent can run its tools (ed-api/qmd via Bash)
         # without a prompt in this headless cockpit. Acceptable here: it's our
         # own agent against our own tools, and the human reviews every draft
@@ -60,9 +74,9 @@ GuardrailScan = Callable[[str, Path], list[str]]
 
 _DRAFT_PROMPT = """A forum thread needs an answer. Run the full workflow for \
 EdStem thread #{number} in course {course_id}: fetch the thread with ed-api, \
-search the knowledge base, load the project guardrail, draft an answer, and run \
-the humanizer. Return only the final post-humanizer answer in the structured \
-shape. In the `original_content` field, put the FULL thread as fetched from \
+search the knowledge base, load the project guardrail, and draft an answer. \
+Return only the final answer in the structured shape. In the `original_content` \
+field, put the FULL thread as fetched from \
 ed-api in plain text: the student's opening post followed by every comment and \
 reply already on the thread, in order, each labeled with who wrote it (e.g. \
 "student", "staff", or the author name) so the human reviewer can read the \
@@ -73,17 +87,72 @@ the thread or are unsure, return a body beginning with "NEEDS HUMAN".""".strip()
 
 _GUARDRAIL_DIR = Path("~/.ed-bot/playbook/guardrails").expanduser()
 
+# The humanizer is a user-level Claude Code skill, which the agent's
+# setting_sources=["project"] does not load. Rather than inject its ~28k chars
+# into every draft (most drafts are NEEDS HUMAN / no-action and write no answer),
+# use progressive disclosure: keep a short directive in the prompt and have the
+# agent READ the rules file ONLY when it actually writes an answer. The agent is
+# granted Read access to the skill's directory via add_dirs (see build_options).
+# ``_HUMANIZER_SKILL_PATH`` is defined near the top (used by ``_agent_add_dirs``).
+_HUMANIZER_DIRECTIVE = """
+
+Your `body` MUST read like a real human TA wrote it whenever it is an actual \
+answer to post. So, ONLY when you are writing such an answer (not when you are \
+flagging "NEEDS HUMAN" or recommending no action), first read the human-writing \
+rules at {path} and apply every applicable rule to the `body`. Do not mention \
+these rules, that file, or "the humanizer" anywhere in your output; just apply \
+them so the answer reads naturally. Skip this entirely for NEEDS HUMAN / \
+no-action drafts.
+""".rstrip() + "\n"
+
+
+def _humanizer_directive() -> str:
+    """The progressive-disclosure humanizer instruction for the draft prompt, or
+    "" if the skill file is absent (the agent still humanizes from the loaded
+    style guide, just without the full rule list)."""
+    if _HUMANIZER_SKILL_PATH.exists():
+        return _HUMANIZER_DIRECTIVE.format(path=_HUMANIZER_SKILL_PATH)
+    return ""
+
+
+def _scrub_conflicting_api_key() -> None:
+    """Keep a stray ANTHROPIC_API_KEY out of the Agent SDK subprocess.
+
+    The cockpit authenticates the agent via the Max-plan subscription, not an
+    API key. But constructing ``EdClient`` (for posting) calls ``load_dotenv``,
+    which loads the project ``.env`` (it carries ``ED_API_TOKEN``) and ALSO
+    injects whatever else lives there, including an ``ANTHROPIC_API_KEY``. The
+    SDK subprocess inherits the process environment, so a leaked (and often
+    stale) key reaches the CLI and it fails with "Invalid API key". The SDK
+    merges ``options.env`` ON TOP of the inherited env and offers no way to
+    unset an inherited var, so the only reliable fix is to drop it here before
+    launching the query.
+    """
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
 
 async def default_sdk_query(*, prompt: str, schema: dict, cwd: str) -> dict:
     """Real one-shot structured SDK call with the correct cockpit options."""
+    _scrub_conflicting_api_key()
     options = build_options(schema=schema, cwd=cwd)
     result: dict | None = None
+    final: ResultMessage | None = None
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, ResultMessage):
+            final = message
             result = message.structured_output
             break
     if result is None:
-        raise RuntimeError("SDK returned no structured_output")
+        # Surface WHY (turn limit, mid-run error, etc.) instead of a generic
+        # message, so a failed draft is diagnosable from the cockpit status line.
+        if final is not None:
+            raise RuntimeError(
+                f"SDK returned no structured_output "
+                f"(subtype={getattr(final, 'subtype', None)!r}, "
+                f"is_error={getattr(final, 'is_error', None)!r}): "
+                f"{getattr(final, 'result', None)!r}"
+            )
+        raise RuntimeError("SDK returned no result message")
     return result
 
 
@@ -110,6 +179,7 @@ async def draft_thread(
 ) -> DraftPayload:
     """Draft an answer for a thread and attach advisory guardrail warnings."""
     prompt = _DRAFT_PROMPT.format(number=number, course_id=course_id)
+    prompt += _humanizer_directive()
     schema = DraftPayload.model_json_schema()
     raw = await sdk_query(prompt=prompt, schema=schema, cwd=cwd)
     payload = DraftPayload.model_validate(raw)
@@ -146,6 +216,7 @@ def _build_chat_prompt(course_id: int, history: list[tuple[str, str]],
 
 async def default_sdk_text(*, prompt: str, cwd: str) -> str:
     """Plain (non-structured) SDK call; returns the concatenated assistant text."""
+    _scrub_conflicting_api_key()
     options = build_options(schema={"type": "object"}, cwd=cwd)
     # Reuse the correct cockpit config but ignore structured output for chat.
     options.output_format = None
