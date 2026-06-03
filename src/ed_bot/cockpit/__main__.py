@@ -14,6 +14,7 @@ from datetime import datetime
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
 from ed_bot.cockpit.agent import chat_reply as _agent_chat_reply
+from ed_bot.cockpit.agent import chat_edit as _agent_chat_edit
 from ed_bot.cockpit.config import ed_working_dir, resolve_course_id
 from ed_bot.cockpit.models import DraftPayload, WatcherEvent
 
@@ -35,6 +36,30 @@ def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
         return await chat_reply(text=text, cwd=cwd, course_id=course_id,
                                 history=history)
     return chat_fn
+
+
+def build_chat_edit_fn(*, cwd: str, chat_edit=_agent_chat_edit):
+    """The loop's chat_edit_fn: an edit-aware chat turn that can revise the
+    active draft, run from the ed dir so the agent's tools resolve."""
+    async def chat_edit_fn(*, text: str, course_id: int, thread_content: str,
+                           current_body: str,
+                           history: list[tuple[str, str]] | None = None,
+                           cwd: str = cwd) -> dict:
+        return await chat_edit(text=text, cwd=cwd, course_id=course_id,
+                               history=history, thread_content=thread_content,
+                               current_body=current_body)
+    return chat_edit_fn
+
+
+def build_rescan_fn():
+    """The loop's rescan_fn: re-scan a revised body for advisory guardrail
+    warnings, so the Never-Reveal advisory stays current after an edit."""
+    from ed_bot.cockpit.agent import _guardrail_path_for
+    from ed_bot.cockpit.guardrail_scan import scan_body
+
+    def rescan(body: str, project) -> list[str]:
+        return scan_body(body, _guardrail_path_for(project))
+    return rescan
 
 
 def resolve_seed_thread_id(client, course_id: int, number: int) -> int:
@@ -93,6 +118,8 @@ def main() -> None:  # pragma: no cover - thin live wiring
     course_id = resolve_course_id()
     draft_fn = build_draft_fn(cwd=cwd)
     chat_fn = build_chat_fn(cwd=cwd)
+    chat_edit_fn = build_chat_edit_fn(cwd=cwd)
+    rescan_fn = build_rescan_fn()
 
     bot_dir = pathlib.Path("~/.ed-bot").expanduser()
     bot_cfg = BotConfig.load(bot_dir)
@@ -112,6 +139,7 @@ def main() -> None:  # pragma: no cover - thin live wiring
     app = CockpitApp(cwd=cwd, course_id=course_id, draft_fn=draft_fn,
                      post_fn=post_fn, is_answered_fn=is_answered_fn,
                      fetch_events=fetch_events, chat_fn=chat_fn,
+                     chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)

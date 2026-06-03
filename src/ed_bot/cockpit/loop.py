@@ -19,6 +19,10 @@ Emit = Callable[[Any], None]
 PostFn = Callable[..., Awaitable[ActionResult]]
 IsAnsweredFn = Callable[[int], Awaitable[bool]]  # called with thread_id
 ChatFn = Callable[..., Awaitable[str]]
+# Edit-aware chat: returns {"reply": str, "revised_body": str | None}.
+ChatEditFn = Callable[..., Awaitable[dict]]
+# Re-scan a revised body against its project guardrails -> advisory warnings.
+RescanFn = Callable[[str, Optional[str]], list[str]]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -28,6 +32,8 @@ class CockpitLoop:
                  emit: Emit, post_fn: "PostFn | None" = None,
                  is_answered_fn: "IsAnsweredFn | None" = None,
                  chat_fn: "ChatFn | None" = None,
+                 chat_edit_fn: "ChatEditFn | None" = None,
+                 rescan_fn: "RescanFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -36,6 +42,8 @@ class CockpitLoop:
         self._post_fn = post_fn
         self._is_answered_fn = is_answered_fn
         self._chat_fn = chat_fn
+        self._chat_edit_fn = chat_edit_fn
+        self._rescan_fn = rescan_fn
         self._items: dict[int, QueueItem] = {}
         self._drafts: dict[int, DraftPayload] = {}
         # Chat conversation memory: (role, text) per turn, role in you|ed-bot.
@@ -114,23 +122,31 @@ class CockpitLoop:
         if cmd.intent == "check_forum":
             self._emit_queue_summary()
             return None
-        if cmd.intent == "freeform" and self._chat_fn is not None:
-            await self._handle_freeform(cmd.text or "")
+        if cmd.intent == "freeform" and (
+                self._chat_fn is not None or self._chat_edit_fn is not None):
+            await self._handle_freeform(cmd.text or "", cmd.thread)
             return None
         return None
 
-    async def _handle_freeform(self, text: str) -> None:
+    async def _handle_freeform(self, text: str,
+                               active_thread: Optional[int] = None) -> None:
         # The lock serializes turns: turn N appends to history before turn N+1
         # reads it, so replies stay in order and each sees prior context.
         async with self._chat_lock:
             history = list(self._chat_history)
             self._chat_history.append(("you", text))
             self._emit(StatusUpdate(line="ed-bot is thinking..."))
+            draft = (self._drafts.get(active_thread)
+                     if active_thread is not None else None)
             try:
-                reply = await self._chat_fn(
-                    text=text, cwd=self._cwd, course_id=self._course_id,
-                    history=history,
-                )
+                if draft is not None and self._chat_edit_fn is not None:
+                    reply = await self._chat_edit_turn(text, history,
+                                                       active_thread, draft)
+                else:
+                    reply = await self._chat_fn(
+                        text=text, cwd=self._cwd, course_id=self._course_id,
+                        history=history,
+                    )
             finally:
                 self._emit(StatusUpdate(line="ready"))
             self._chat_history.append(("ed-bot", reply))
@@ -138,6 +154,29 @@ class CockpitLoop:
             if len(self._chat_history) > self._chat_history_limit:
                 self._chat_history = self._chat_history[-self._chat_history_limit:]
             self._emit(ChatMessage(role="ed-bot", text=reply))
+
+    async def _chat_edit_turn(self, text: str, history: list[tuple[str, str]],
+                              number: int, draft: DraftPayload) -> str:
+        """Run an edit-aware chat turn against the active draft. If the agent
+        returns a revised body, update the stored draft and re-emit it so the
+        viewer refreshes. Returns the chat reply text."""
+        result = await self._chat_edit_fn(
+            text=text, cwd=self._cwd, course_id=self._course_id,
+            history=history, thread_content=draft.original_content,
+            current_body=draft.body,
+        )
+        reply = (result.get("reply") or "").strip()
+        new_body = result.get("revised_body")
+        if new_body:
+            warnings = (self._rescan_fn(new_body, draft.project)
+                        if self._rescan_fn is not None else draft.guardrail_warnings)
+            updated = draft.model_copy(
+                update={"body": new_body, "guardrail_warnings": warnings})
+            self._drafts[number] = updated
+            self._emit(updated)  # the app re-shows it in the draft viewer
+            if not reply:
+                reply = f"Updated the draft for #{number}."
+        return reply
 
     def _emit_queue_summary(self) -> None:
         items = list(self._items.values())

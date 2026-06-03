@@ -21,6 +21,7 @@ from ed_bot.cockpit.watcher import watch_loop
 from ed_bot.cockpit.messages import LoopEmission
 from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
+    DraftPayload,
 )
 from ed_bot.cockpit.widgets import QueueRail, DraftViewer, StatusBar, AlertBanner, ChatLog
 
@@ -39,7 +40,8 @@ class CockpitApp(App):
 
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None,
-                 chat_fn=None, watch_interval: float = 120.0) -> None:
+                 chat_fn=None, chat_edit_fn=None, rescan_fn=None,
+                 watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
         self._course_id = course_id
@@ -50,7 +52,7 @@ class CockpitApp(App):
         self.loop = CockpitLoop(
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
-            chat_fn=chat_fn,
+            chat_fn=chat_fn, chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
         )
 
     def compose(self) -> ComposeResult:
@@ -108,6 +110,10 @@ class CockpitApp(App):
             self.query_one(StatusBar).show(ok)
         elif isinstance(payload, ChatMessage):
             self.query_one(ChatLog).add(payload)
+        elif isinstance(payload, DraftPayload):
+            # A chat edit revised the active draft -> refresh the viewer.
+            if payload.number == self._active_thread:
+                self.query_one(DraftViewer).show(payload)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -222,7 +228,6 @@ class CockpitApp(App):
         result = await self.loop.handle(cmd)
         if result is None:
             return
-        from ed_bot.cockpit.models import DraftPayload
         if isinstance(result, DraftPayload):
             self._active_thread = result.number
             self.query_one(DraftViewer).show(result)
