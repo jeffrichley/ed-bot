@@ -23,7 +23,6 @@ from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
     DraftPayload,
 )
-from ed_bot.cockpit.thread_tree import flatten
 from ed_bot.cockpit.widgets import (
     QueueRail, StatusBar, AlertBanner, ChatLog, forum_text, draft_advisory,
 )
@@ -45,7 +44,7 @@ class CockpitApp(App):
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None,
                  chat_fn=None, chat_edit_fn=None, rescan_fn=None,
-                 persist_fn=None, fetch_tree_fn=None,
+                 persist_fn=None, fetch_tree_fn=None, draft_reply_fn=None,
                  watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
@@ -54,13 +53,18 @@ class CockpitApp(App):
         self._watch_stop: Optional[asyncio.Event] = None
         self._watch_queue: Optional[asyncio.Queue] = None
         self._active_thread: Optional[int] = None
+        self._active_target: Optional[int] = None  # selected comment (None = OP)
         self._editing: bool = False
         self._edit_backup: str = ""
+        self._tree_nodes: dict = {}        # comment_id -> TreeNode
+        self._populating: bool = False     # ignore tree highlights while building
+        self._pending_target: Optional[int] = None
         self.loop = CockpitLoop(
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
             chat_fn=chat_fn, chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
             persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
+            draft_reply_fn=draft_reply_fn,
         )
 
     def compose(self) -> ComposeResult:
@@ -94,42 +98,60 @@ class CockpitApp(App):
 
     # --- draft display ---
     def _show_draft(self, d: DraftPayload) -> None:
-        """Show the draft, populate the comment tree, and focus the comment the
-        draft targets (not while editing)."""
+        """Populate the comment tree for this draft's thread and select the
+        comment it targets; the tree selection drives the comment + draft panes.
+        Skipped while editing so an in-flight edit isn't clobbered."""
         if self._editing:
             return
-        draft = self.query_one("#draft", TextArea)
-        draft.text = d.body
-        draft.border_subtitle = draft_advisory(d)
-        draft.border_title = (f"Draft → {'answering the post' if d.post_kind == 'answer' else 'reply'}"
-                              f"  ·  conf {d.confidence}")
         self._populate_tree(d)
 
     def _populate_tree(self, d: DraftPayload) -> None:
         tree = self.query_one("#tree", Tree)
         tree.clear()
+        self._tree_nodes = {}  # comment_id -> TreeNode
         op = self.loop.tree(d.number)
         if op is None:
             # No structured tree (fetch failed) -> fall back to the flat text.
             tree.root.set_label(f"#{d.number}")
             self._show_comment_text("Thread", forum_text(d))
+            self._set_draft_box(d)
             return
-        tree.root.set_label(f"#{d.number}")
-        self._add_node(tree.root, op, target=d.target_comment_id)
+        drafted = set(self.loop.targets_with_drafts(d.number))
+        tree.root.set_label(f"#{d.number}  ({len(drafted)} draft(s))")
+        self._populating = True
+        self._add_node(tree.root, op, drafted=drafted)
         tree.root.expand_all()
-        # Focus the comment the draft answers (the OP for a top-level answer).
-        target = self._find_node(op, d.target_comment_id)
-        self._show_comment(target or op)
+        # Show the targeted comment now (the layout's stray highlight events are
+        # ignored while _populating); then move the cursor to it after a refresh.
+        target_tn = (self._tree_nodes.get(d.target_comment_id)
+                     or self._tree_nodes.get(None))
+        if target_tn is not None:
+            self._select_comment(target_tn.data)
+        self._pending_target = d.target_comment_id
+        self.call_after_refresh(self._focus_target)
 
-    def _add_node(self, parent, cn, *, target) -> None:
-        node = parent.add(self._node_label(cn, target), data=cn, expand=True)
+    def _focus_target(self) -> None:
+        self._populating = False
+        tn = (self._tree_nodes.get(self._pending_target)
+              or self._tree_nodes.get(None))
+        if tn is not None:
+            tree = self.query_one("#tree", Tree)
+            try:
+                tree.move_cursor(tn)
+            except Exception:  # noqa: BLE001 - cursor move is best-effort
+                pass
+            self._select_comment(tn.data)
+
+    def _add_node(self, parent, cn, *, drafted) -> None:
+        node = parent.add(self._node_label(cn, drafted), data=cn, expand=True)
+        self._tree_nodes[cn.comment_id] = node
         for child in cn.children:
-            self._add_node(node, child, target=target)
+            self._add_node(node, child, drafted=drafted)
 
     # Compact tree labels: role + markers as emoji to save horizontal room.
-    # 🎓 student · 🛡️ staff · 📌 original post · ❓ needs a reply · ✏️ drafted target
+    # 🎓 student · 🛡️ staff · 📌 original post · ❓ open question · ✏️ has a draft
     @staticmethod
-    def _node_label(cn, target) -> str:
+    def _node_label(cn, drafted) -> str:
         role_icon = "🛡️" if cn.is_staff else "🎓"
         who = f"{role_icon} {cn.author}"
         if cn.is_op:
@@ -137,16 +159,32 @@ class CockpitApp(App):
         marks = ""
         if cn.needs_reply:
             marks += " ❓"
-        if cn.comment_id == target:
+        if cn.comment_id in drafted:
             marks += " ✏️"
         return who + marks
 
-    @staticmethod
-    def _find_node(op, target):
-        for _, node in flatten(op):
-            if node.comment_id == target:
-                return node
-        return None
+    def _select_comment(self, cn) -> None:
+        """Make this comment the active target: show its text and its draft."""
+        self._active_target = cn.comment_id
+        self._show_comment(cn)
+        if self._editing:
+            return
+        d = (self.loop.draft(self._active_thread, cn.comment_id)
+             if self._active_thread is not None else None)
+        if d is not None:
+            self._set_draft_box(d)
+        else:
+            box = self.query_one("#draft", TextArea)
+            box.text = ""
+            box.border_subtitle = ""
+            box.border_title = "Draft — none here (press d to draft a reply)"
+
+    def _set_draft_box(self, d: DraftPayload) -> None:
+        box = self.query_one("#draft", TextArea)
+        box.text = d.body
+        box.border_subtitle = draft_advisory(d)
+        kind = "answer to the post" if d.post_kind == "answer" else "reply"
+        box.border_title = f"Draft → {kind}  ·  conf {d.confidence}"
 
     def _show_comment(self, cn) -> None:
         title = "Original post" if cn.is_op else f"{cn.author} ({cn.role})"
@@ -158,10 +196,12 @@ class CockpitApp(App):
         box.border_title = title
 
     def on_tree_node_highlighted(self, event) -> None:
-        """Arrowing the tree shows that comment's full text in the comment box."""
+        """Arrowing the tree selects that comment: shows its text and its draft."""
+        if self._populating:
+            return  # ignore the layout's initial highlight events
         cn = getattr(event.node, "data", None)
         if cn is not None:
-            self._show_comment(cn)
+            self._select_comment(cn)
 
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
@@ -206,6 +246,7 @@ class CockpitApp(App):
             return
         self.query_one(ChatLog).add(ChatMessage(role="you", text=text))
         cmd = parse_command(text, active_thread=self._active_thread)
+        cmd = cmd.model_copy(update={"target": self._active_target})
         self.inject_command(cmd)
 
     def on_option_list_option_selected(self, event) -> None:
@@ -234,7 +275,8 @@ class CockpitApp(App):
 
     def action_edit_draft(self) -> None:
         """Enter edit mode: make the draft box editable and focus it."""
-        if self._active_thread is None or self.loop.draft(self._active_thread) is None:
+        if (self._active_thread is None
+                or self.loop.draft(self._active_thread, self._active_target) is None):
             self.query_one(StatusBar).show("no active draft to edit")
             return
         draft = self.query_one("#draft", TextArea)
@@ -249,7 +291,8 @@ class CockpitApp(App):
         if not self._editing:
             return
         new_body = self.query_one("#draft", TextArea).text
-        updated = self.loop.update_draft_body(self._active_thread, new_body)
+        updated = self.loop.update_draft_body(self._active_thread, new_body,
+                                              self._active_target)
         self._exit_edit_mode()
         if updated is not None:
             self._show_draft(updated)
@@ -266,7 +309,8 @@ class CockpitApp(App):
         if self._active_thread is None:
             self.query_one(StatusBar).show("no active thread")
             return
-        self.inject_command(UserCommand(intent=intent, thread=self._active_thread))
+        self.inject_command(UserCommand(intent=intent, thread=self._active_thread,
+                                        target=self._active_target))
 
     def _thread_url(self, number: int) -> Optional[str]:
         """The EdStem discussion URL for a queued thread number, or None if the
@@ -347,4 +391,5 @@ class CockpitApp(App):
             return
         if isinstance(result, DraftPayload):
             self._active_thread = result.number
+            self._active_target = result.target_comment_id
             self._show_draft(result)

@@ -29,6 +29,8 @@ class UserCommand(BaseModel):
     intent: CommandIntent
     thread: Optional[int] = None
     text: Optional[str] = None
+    # The comment a per-comment action targets (None = the top-level/OP draft).
+    target: Optional[int] = None
 
 
 class WatcherEvent(BaseModel):

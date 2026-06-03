@@ -15,6 +15,8 @@ from ed_bot.cockpit.models import (
 )
 
 DraftFn = Callable[..., Awaitable[DraftPayload]]
+# Draft a reply to one comment (or the OP): (number, cwd, course_id, target).
+DraftReplyFn = Callable[..., Awaitable[DraftPayload]]
 Emit = Callable[[Any], None]
 PostFn = Callable[..., Awaitable[ActionResult]]
 IsAnsweredFn = Callable[[int], Awaitable[bool]]  # called with thread_id
@@ -40,6 +42,7 @@ class CockpitLoop:
                  rescan_fn: "RescanFn | None" = None,
                  persist_fn: "PersistFn | None" = None,
                  fetch_tree_fn: "FetchTreeFn | None" = None,
+                 draft_reply_fn: "DraftReplyFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -52,8 +55,11 @@ class CockpitLoop:
         self._rescan_fn = rescan_fn
         self._persist_fn = persist_fn
         self._fetch_tree_fn = fetch_tree_fn
+        self._draft_reply_fn = draft_reply_fn
         self._items: dict[int, QueueItem] = {}
-        self._drafts: dict[int, DraftPayload] = {}
+        # Drafts keyed by (thread number, target comment id). target None is the
+        # top-level answer to the original post; a comment id is a reply to it.
+        self._drafts: dict[tuple[int, Optional[int]], DraftPayload] = {}
         self._trees: dict[int, Any] = {}  # number -> CommentNode (the OP node)
         # Chat conversation memory: (role, text) per turn, role in you|ed-bot.
         # Capped at the last ``chat_history_limit`` turns so the prompt (and
@@ -68,24 +74,30 @@ class CockpitLoop:
     def queue_item(self, number: int) -> Optional[QueueItem]:
         return self._items.get(number)
 
-    def draft(self, number: int) -> Optional[DraftPayload]:
-        return self._drafts.get(number)
+    def draft(self, number: int,
+              target: Optional[int] = None) -> Optional[DraftPayload]:
+        return self._drafts.get((number, target))
+
+    def targets_with_drafts(self, number: int) -> list[Optional[int]]:
+        """The comment targets that have a draft for this thread."""
+        return [tgt for (num, tgt) in self._drafts if num == number]
 
     def tree(self, number: int):
         """The thread's comment tree (CommentNode), or None if not fetched."""
         return self._trees.get(number)
 
-    def update_draft_body(self, number: int, new_body: str) -> Optional[DraftPayload]:
+    def update_draft_body(self, number: int, new_body: str,
+                          target: Optional[int] = None) -> Optional[DraftPayload]:
         """Replace a draft's body (e.g. after a manual edit), re-scanning the
         guardrail advisory. Returns the updated payload, or None if no draft."""
-        draft = self._drafts.get(number)
+        draft = self._drafts.get((number, target))
         if draft is None:
             return None
         warnings = (self._rescan_fn(new_body, draft.project)
                     if self._rescan_fn is not None else draft.guardrail_warnings)
         updated = draft.model_copy(
             update={"body": new_body, "guardrail_warnings": warnings})
-        self._drafts[number] = updated
+        self._drafts[(number, target)] = updated
         if self._persist_fn is not None:
             self._persist_fn(number, updated)
         return updated
@@ -119,6 +131,54 @@ class CockpitLoop:
         await self._autodraft(ev.number)
 
     async def _autodraft(self, number: int) -> None:
+        # Per-comment path: build the tree and draft a reply for each open
+        # question. Falls back to the legacy single-draft path when the per-
+        # comment machinery isn't wired (e.g. tests with only draft_fn).
+        if self._fetch_tree_fn is not None and self._draft_reply_fn is not None:
+            await self._autodraft_targets(number)
+        else:
+            await self._autodraft_single(number)
+
+    def _reconcile_thread_id(self, number: int,
+                             payload: DraftPayload) -> DraftPayload:
+        # The watcher/seed event carries the authoritative GLOBAL thread id; the
+        # agent's returned thread_id is an unguided LLM value, so reconcile it.
+        item = self._items.get(number)
+        if item is not None:
+            return payload.model_copy(update={"thread_id": item.thread_id})
+        return payload
+
+    async def _autodraft_targets(self, number: int) -> None:
+        from ed_bot.cockpit.thread_tree import actionable_targets
+        self._emit(StatusUpdate(line=f"reading #{number}..."))
+        await self._load_tree(number)
+        op = self._trees.get(number)
+        targets = actionable_targets(op) if op is not None else []
+        if not targets:
+            self._items[number] = self._items[number].model_copy(
+                update={"draft_state": "none"})
+            self._emit(StatusUpdate(line=f"#{number}: nothing to draft"))
+            self._push_queue()
+            return
+        drafted = 0
+        for t in targets:
+            who = "the original post" if t.is_op else t.author
+            self._emit(StatusUpdate(line=f"drafting #{number} → {who}..."))
+            try:
+                payload = await self._draft_reply_fn(
+                    number=number, cwd=self._cwd, course_id=self._course_id,
+                    target_comment_id=t.target_comment_id)
+            except Exception:  # noqa: BLE001 - skip this target, keep the rest
+                continue
+            payload = self._reconcile_thread_id(number, payload)
+            self._drafts[(number, t.target_comment_id)] = payload
+            drafted += 1
+        self._items[number] = self._items[number].model_copy(
+            update={"draft_state": "ready" if drafted else "failed"})
+        self._emit(StatusUpdate(line=f"#{number}: {drafted} draft(s) ready"))
+        self._push_queue()
+
+    async def _autodraft_single(self, number: int) -> None:
         self._emit(StatusUpdate(line=f"drafting #{number}..."))
         try:
             payload = await self._draft_fn(
@@ -130,13 +190,8 @@ class CockpitLoop:
             self._emit(StatusUpdate(line=f"draft #{number} failed: {e}"))
             self._push_queue()
             return
-        # The watcher/seed event carries the authoritative GLOBAL thread id.
-        # The agent's returned thread_id is an unguided LLM value, so never
-        # trust it for routing: reconcile to the queue item's id.
-        item = self._items.get(number)
-        if item is not None:
-            payload = payload.model_copy(update={"thread_id": item.thread_id})
-        self._drafts[number] = payload
+        payload = self._reconcile_thread_id(number, payload)
+        self._drafts[(number, payload.target_comment_id)] = payload
         await self._load_tree(number)
         self._items[number] = self._items[number].model_copy(
             update={"draft_state": "ready"})
@@ -154,32 +209,40 @@ class CockpitLoop:
 
     async def _on_command(self, cmd: UserCommand):
         if cmd.intent == "open" and cmd.thread is not None:
-            return self._drafts.get(cmd.thread)
+            if cmd.target is not None:
+                return self._drafts.get((cmd.thread, cmd.target))
+            # Default open: the first draft for this thread (any target).
+            for (num, _tgt), d in self._drafts.items():
+                if num == cmd.thread:
+                    return d
+            return None
         if cmd.intent == "approve" and cmd.thread is not None:
-            return await self._approve(cmd.thread)
+            return await self._approve(cmd.thread, cmd.target)
         if cmd.intent == "check_forum":
             self._emit_queue_summary()
             return None
         if cmd.intent == "freeform" and (
                 self._chat_fn is not None or self._chat_edit_fn is not None):
-            await self._handle_freeform(cmd.text or "", cmd.thread)
+            await self._handle_freeform(cmd.text or "", cmd.thread, cmd.target)
             return None
         return None
 
     async def _handle_freeform(self, text: str,
-                               active_thread: Optional[int] = None) -> None:
+                               active_thread: Optional[int] = None,
+                               active_target: Optional[int] = None) -> None:
         # The lock serializes turns: turn N appends to history before turn N+1
         # reads it, so replies stay in order and each sees prior context.
         async with self._chat_lock:
             history = list(self._chat_history)
             self._chat_history.append(("you", text))
             self._emit(StatusUpdate(line="ed-bot is thinking..."))
-            draft = (self._drafts.get(active_thread)
+            draft = (self._drafts.get((active_thread, active_target))
                      if active_thread is not None else None)
             try:
                 if draft is not None and self._chat_edit_fn is not None:
                     reply = await self._chat_edit_turn(text, history,
-                                                       active_thread, draft)
+                                                       active_thread, active_target,
+                                                       draft)
                 else:
                     reply = await self._chat_fn(
                         text=text, cwd=self._cwd, course_id=self._course_id,
@@ -194,7 +257,8 @@ class CockpitLoop:
             self._emit(ChatMessage(role="ed-bot", text=reply))
 
     async def _chat_edit_turn(self, text: str, history: list[tuple[str, str]],
-                              number: int, draft: DraftPayload) -> str:
+                              number: int, target: Optional[int],
+                              draft: DraftPayload) -> str:
         """Run an edit-aware chat turn against the active draft. If the agent
         returns a revised body, update the stored draft and re-emit it so the
         viewer refreshes. Returns the chat reply text."""
@@ -210,7 +274,7 @@ class CockpitLoop:
                         if self._rescan_fn is not None else draft.guardrail_warnings)
             updated = draft.model_copy(
                 update={"body": new_body, "guardrail_warnings": warnings})
-            self._drafts[number] = updated
+            self._drafts[(number, target)] = updated
             if self._persist_fn is not None:
                 self._persist_fn(number, updated)
             self._emit(updated)  # the app re-shows it in the draft viewer
@@ -228,8 +292,9 @@ class CockpitLoop:
             role="ed-bot",
             text=f"{len(items)} in queue: " + ", ".join(parts)))
 
-    async def _approve(self, number: int) -> ActionResult:
-        payload = self._drafts.get(number)
+    async def _approve(self, number: int,
+                       target: Optional[int] = None) -> ActionResult:
+        payload = self._drafts.get((number, target))
         if payload is None:
             return ActionResult(thread_id=0, ok=False, message="no draft to post")
         # Staleness guard applies ONLY to new top-level answers. A follow-up

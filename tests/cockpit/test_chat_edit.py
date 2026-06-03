@@ -32,7 +32,7 @@ async def test_chat_edits_active_draft_and_emits_updated():
 
     loop = CockpitLoop(cwd=".", course_id=1, draft_fn=None, emit=emitted.append,
                        chat_edit_fn=chat_edit_fn)
-    loop._drafts[207] = _draft()
+    loop._drafts[(207, None)] = _draft()
     await loop.handle(UserCommand(intent="freeform", thread=207, text="reword it"))
 
     assert loop.draft(207).body == "NEW BODY"
@@ -51,7 +51,7 @@ async def test_chat_question_leaves_draft_unchanged():
 
     loop = CockpitLoop(cwd=".", course_id=1, draft_fn=None, emit=emitted.append,
                        chat_edit_fn=chat_edit_fn)
-    loop._drafts[207] = _draft()
+    loop._drafts[(207, None)] = _draft()
     await loop.handle(UserCommand(intent="freeform", thread=207, text="is this ok?"))
 
     assert loop.draft(207).body == "OLD BODY"
@@ -78,7 +78,7 @@ async def test_edit_rescans_guardrails_on_revised_body():
     loop = CockpitLoop(cwd=".", course_id=1, draft_fn=None, emit=lambda e: None,
                        chat_edit_fn=chat_edit_fn,
                        rescan_fn=lambda body, project: ["possible leak 18/38"])
-    loop._drafts[207] = _draft(project="Project 1 - Martingale")
+    loop._drafts[(207, None)] = _draft(project="Project 1 - Martingale")
     await loop.handle(UserCommand(intent="freeform", thread=207, text="reword"))
     assert loop.draft(207).guardrail_warnings == ["possible leak 18/38"]
 

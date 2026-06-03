@@ -82,7 +82,7 @@ async def test_reply_not_blocked_by_is_answered():
 
     loop = CockpitLoop(cwd=".", course_id=1, draft_fn=None, emit=lambda x: None,
                        post_fn=post_fn, is_answered_fn=is_answered_fn)
-    loop._drafts[207] = DraftPayload(
+    loop._drafts[(207, None)] = DraftPayload(
         thread_id=8100207, number=207, question="q", body="reply body",
         post_kind="reply", target_comment_id=909)
 
@@ -105,7 +105,7 @@ async def test_answer_forwards_thread_id_to_post_fn():
 
     loop = CockpitLoop(cwd=".", course_id=1, draft_fn=None, emit=lambda x: None,
                        post_fn=post_fn, is_answered_fn=is_answered_fn)
-    loop._drafts[207] = DraftPayload(
+    loop._drafts[(207, None)] = DraftPayload(
         thread_id=8100207, number=207, question="q", body="answer body",
         post_kind="answer")
 
