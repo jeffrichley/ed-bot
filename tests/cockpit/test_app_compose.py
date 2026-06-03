@@ -1,7 +1,7 @@
 """Tests that the app composes Layout A and routes loop emissions to widgets."""
 import pytest
 
-from textual.widgets import TextArea
+from textual.widgets import TextArea, Tree
 
 from ed_bot.cockpit.app import CockpitApp
 from ed_bot.cockpit.widgets import QueueRail, StatusBar
@@ -23,7 +23,8 @@ async def test_app_mounts_core_widgets():
     app = _make_app()
     async with app.run_test() as pilot:
         assert app.query_one(QueueRail)
-        assert app.query_one("#forum", TextArea)
+        assert app.query_one("#tree", Tree)
+        assert app.query_one("#comment", TextArea)
         assert app.query_one("#draft", TextArea)
         assert app.query_one(StatusBar)
 

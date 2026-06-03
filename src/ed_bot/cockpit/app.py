@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, Input, TextArea
+from textual.widgets import Header, Footer, Input, TextArea, Tree
 from textual import work
 
 from ed_bot.cockpit.command_parser import parse_command
@@ -23,9 +23,9 @@ from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
     DraftPayload,
 )
+from ed_bot.cockpit.thread_tree import flatten
 from ed_bot.cockpit.widgets import (
-    QueueRail, StatusBar, AlertBanner, ChatLog,
-    forum_text, forum_box_title, draft_advisory,
+    QueueRail, StatusBar, AlertBanner, ChatLog, forum_text, draft_advisory,
 )
 
 
@@ -45,7 +45,8 @@ class CockpitApp(App):
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None,
                  chat_fn=None, chat_edit_fn=None, rescan_fn=None,
-                 persist_fn=None, watch_interval: float = 120.0) -> None:
+                 persist_fn=None, fetch_tree_fn=None,
+                 watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
         self._course_id = course_id
@@ -59,7 +60,7 @@ class CockpitApp(App):
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
             chat_fn=chat_fn, chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
-            persist_fn=persist_fn,
+            persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
         )
 
     def compose(self) -> ComposeResult:
@@ -67,8 +68,9 @@ class CockpitApp(App):
         yield AlertBanner(id="alert")
         with Horizontal(id="body"):
             yield QueueRail(id="queue")
-            with Vertical(id="panes"):
-                yield TextArea("", id="forum", read_only=True, soft_wrap=True)
+            yield Tree("thread", id="tree")
+            with Vertical(id="right"):
+                yield TextArea("", id="comment", read_only=True, soft_wrap=True)
                 yield TextArea("", id="draft", read_only=True, soft_wrap=True)
         yield StatusBar(id="status")
         yield ChatLog(id="chatlog")
@@ -79,10 +81,9 @@ class CockpitApp(App):
         """Paint initial placeholder state so the panels aren't blank, and put
         keyboard focus on the chat input (not the now-focusable queue rail)."""
         self.query_one(QueueRail).show([])
-        forum = self.query_one("#forum", TextArea)
-        forum.border_title = "Forum thread"
-        draft = self.query_one("#draft", TextArea)
-        draft.border_title = "Draft"
+        self.query_one("#tree", Tree).show_root = False
+        self.query_one("#comment", TextArea).border_title = "Comment"
+        self.query_one("#draft", TextArea).border_title = "Draft"
         self.query_one(StatusBar).show("ready")
         self.query_one("#chat", Input).focus()
         if self._fetch_events is not None:
@@ -93,15 +94,69 @@ class CockpitApp(App):
 
     # --- draft display ---
     def _show_draft(self, d: DraftPayload) -> None:
-        """Render a draft into the forum + draft boxes (not while editing)."""
+        """Show the draft, populate the comment tree, and focus the comment the
+        draft targets (not while editing)."""
         if self._editing:
             return
-        forum = self.query_one("#forum", TextArea)
-        forum.text = forum_text(d)
-        forum.border_title = forum_box_title(d)
         draft = self.query_one("#draft", TextArea)
         draft.text = d.body
         draft.border_subtitle = draft_advisory(d)
+        draft.border_title = (f"Draft → {'answering the post' if d.post_kind == 'answer' else 'reply'}"
+                              f"  ·  conf {d.confidence}")
+        self._populate_tree(d)
+
+    def _populate_tree(self, d: DraftPayload) -> None:
+        tree = self.query_one("#tree", Tree)
+        tree.clear()
+        op = self.loop.tree(d.number)
+        if op is None:
+            # No structured tree (fetch failed) -> fall back to the flat text.
+            tree.root.set_label(f"#{d.number}")
+            self._show_comment_text("Thread", forum_text(d))
+            return
+        tree.root.set_label(f"#{d.number}")
+        self._add_node(tree.root, op, target=d.target_comment_id)
+        tree.root.expand_all()
+        # Focus the comment the draft answers (the OP for a top-level answer).
+        target = self._find_node(op, d.target_comment_id)
+        self._show_comment(target or op)
+
+    def _add_node(self, parent, cn, *, target) -> None:
+        node = parent.add(self._node_label(cn, target), data=cn, expand=True)
+        for child in cn.children:
+            self._add_node(node, child, target=target)
+
+    @staticmethod
+    def _node_label(cn, target) -> str:
+        who = "Original post" if cn.is_op else f"{cn.author} ({cn.role})"
+        marks = ""
+        if cn.needs_reply:
+            marks += "  ● needs reply"
+        if cn.comment_id == target:
+            marks += "  ◄ DRAFT"
+        return who + marks
+
+    @staticmethod
+    def _find_node(op, target):
+        for _, node in flatten(op):
+            if node.comment_id == target:
+                return node
+        return None
+
+    def _show_comment(self, cn) -> None:
+        title = "Original post" if cn.is_op else f"{cn.author} ({cn.role})"
+        self._show_comment_text(title, cn.text or "(no text)")
+
+    def _show_comment_text(self, title: str, text: str) -> None:
+        box = self.query_one("#comment", TextArea)
+        box.text = text
+        box.border_title = title
+
+    def on_tree_node_highlighted(self, event) -> None:
+        """Arrowing the tree shows that comment's full text in the comment box."""
+        cn = getattr(event.node, "data", None)
+        if cn is not None:
+            self._show_comment(cn)
 
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
