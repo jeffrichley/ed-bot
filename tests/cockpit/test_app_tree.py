@@ -89,6 +89,42 @@ async def test_opening_thread_renders_tree_and_target_comment():
         assert "follow-up question" in app.query_one("#comment", TextArea).text
 
 
+async def test_navigating_tree_shows_each_comments_own_draft():
+    op = CommentNode(
+        comment_id=None, author="Jane", role="student", is_staff=False, text="OP",
+        children=[
+            CommentNode(comment_id=10, author="Bob", role="student",
+                        is_staff=False, text="Q1", children=[], needs_reply=True),
+            CommentNode(comment_id=20, author="Amy", role="student",
+                        is_staff=False, text="Q2", children=[], needs_reply=True),
+        ])
+
+    async def draft_fn(*, number, **kw):  # unused on the per-comment path
+        return DraftPayload(thread_id=8100207, number=number, question="q", body="x")
+
+    async def draft_reply_fn(*, number, cwd, course_id, target_comment_id):
+        return DraftPayload(thread_id=8100207, number=number, question="q",
+                            body=f"reply to {target_comment_id}", post_kind="reply",
+                            target_comment_id=target_comment_id)
+
+    async def fetch_tree_fn(course_id, number):
+        return op
+
+    app = CockpitApp(cwd=".", course_id=98559, draft_fn=draft_fn,
+                     fetch_tree_fn=fetch_tree_fn, draft_reply_fn=draft_reply_fn)
+    async with app.run_test() as pilot:
+        await _open(app, pilot, 207)
+        labels = _all_labels(app.query_one("#tree", Tree).root)
+        assert sum("✏️" in l for l in labels) == 2  # both questions drafted
+        # Selecting comment 20 shows ITS draft.
+        tree = app.query_one("#tree", Tree)
+        tree.move_cursor(app._tree_nodes[20])
+        for _ in range(4):
+            await pilot.pause()
+        assert app._active_target == 20
+        assert app.query_one("#draft", TextArea).text == "reply to 20"
+
+
 async def test_top_level_answer_targets_the_op_comment():
     op = _tree()
 

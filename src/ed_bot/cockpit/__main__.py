@@ -13,6 +13,7 @@ import argparse
 from datetime import datetime
 
 from ed_bot.cockpit.agent import draft_thread as _agent_draft_thread
+from ed_bot.cockpit.agent import draft_reply as _agent_draft_reply
 from ed_bot.cockpit.agent import chat_reply as _agent_chat_reply
 from ed_bot.cockpit.agent import chat_edit as _agent_chat_edit
 from ed_bot.cockpit.config import ed_working_dir, resolve_course_id
@@ -25,6 +26,16 @@ def build_draft_fn(*, cwd: str, draft_thread=_agent_draft_thread):
     async def draft_fn(*, number: int, cwd: str = cwd, course_id: int) -> DraftPayload:
         return await draft_thread(number=number, cwd=cwd, course_id=course_id)
     return draft_fn
+
+
+def build_reply_fn(*, cwd: str, draft_reply=_agent_draft_reply):
+    """The loop's per-comment draft fn: draft a reply to a specific comment (or
+    the OP) from the ed working dir so the agent's tools resolve."""
+    async def reply_fn(*, number: int, course_id: int, target_comment_id,
+                       cwd: str = cwd) -> DraftPayload:
+        return await draft_reply(number=number, cwd=cwd, course_id=course_id,
+                                 target_comment_id=target_comment_id)
+    return reply_fn
 
 
 def build_chat_fn(*, cwd: str, chat_reply=_agent_chat_reply):
@@ -169,7 +180,9 @@ def main() -> None:  # pragma: no cover - thin live wiring
                         help="don't poll the live forum (seed-only)")
     args = parser.parse_args()
 
-    from ed_bot.cockpit.draft_cache import build_cached_draft_fn, update_payload
+    from ed_bot.cockpit.draft_cache import (
+        build_cached_draft_fn, build_cached_reply_fn, update_payload,
+    )
 
     cwd = str(ed_working_dir())
     course_id = resolve_course_id()
@@ -201,6 +214,12 @@ def main() -> None:  # pragma: no cover - thin live wiring
 
     fetch_tree_fn = build_fetch_tree_fn(client=client)
 
+    # Per-comment drafting: draft a reply to each open question, cached per
+    # target so re-opening an unchanged thread is instant.
+    draft_reply_fn = build_cached_reply_fn(
+        inner=build_reply_fn(cwd=cwd),
+        fetch_meta=build_fetch_meta(client=client), cache_dir=cache_dir)
+
     fetch_events = None
     if not args.no_watch:
         store = WatchAlertStore(bot_dir / "state" / "tracker.db")
@@ -212,6 +231,7 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      fetch_events=fetch_events, chat_fn=chat_fn,
                      chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
                      persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
+                     draft_reply_fn=draft_reply_fn,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)

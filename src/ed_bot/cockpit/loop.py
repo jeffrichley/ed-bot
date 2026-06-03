@@ -15,6 +15,8 @@ from ed_bot.cockpit.models import (
 )
 
 DraftFn = Callable[..., Awaitable[DraftPayload]]
+# Draft a reply to one comment (or the OP): (number, cwd, course_id, target).
+DraftReplyFn = Callable[..., Awaitable[DraftPayload]]
 Emit = Callable[[Any], None]
 PostFn = Callable[..., Awaitable[ActionResult]]
 IsAnsweredFn = Callable[[int], Awaitable[bool]]  # called with thread_id
@@ -40,6 +42,7 @@ class CockpitLoop:
                  rescan_fn: "RescanFn | None" = None,
                  persist_fn: "PersistFn | None" = None,
                  fetch_tree_fn: "FetchTreeFn | None" = None,
+                 draft_reply_fn: "DraftReplyFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -52,6 +55,7 @@ class CockpitLoop:
         self._rescan_fn = rescan_fn
         self._persist_fn = persist_fn
         self._fetch_tree_fn = fetch_tree_fn
+        self._draft_reply_fn = draft_reply_fn
         self._items: dict[int, QueueItem] = {}
         # Drafts keyed by (thread number, target comment id). target None is the
         # top-level answer to the original post; a comment id is a reply to it.
@@ -127,6 +131,54 @@ class CockpitLoop:
         await self._autodraft(ev.number)
 
     async def _autodraft(self, number: int) -> None:
+        # Per-comment path: build the tree and draft a reply for each open
+        # question. Falls back to the legacy single-draft path when the per-
+        # comment machinery isn't wired (e.g. tests with only draft_fn).
+        if self._fetch_tree_fn is not None and self._draft_reply_fn is not None:
+            await self._autodraft_targets(number)
+        else:
+            await self._autodraft_single(number)
+
+    def _reconcile_thread_id(self, number: int,
+                             payload: DraftPayload) -> DraftPayload:
+        # The watcher/seed event carries the authoritative GLOBAL thread id; the
+        # agent's returned thread_id is an unguided LLM value, so reconcile it.
+        item = self._items.get(number)
+        if item is not None:
+            return payload.model_copy(update={"thread_id": item.thread_id})
+        return payload
+
+    async def _autodraft_targets(self, number: int) -> None:
+        from ed_bot.cockpit.thread_tree import actionable_targets
+        self._emit(StatusUpdate(line=f"reading #{number}..."))
+        await self._load_tree(number)
+        op = self._trees.get(number)
+        targets = actionable_targets(op) if op is not None else []
+        if not targets:
+            self._items[number] = self._items[number].model_copy(
+                update={"draft_state": "none"})
+            self._emit(StatusUpdate(line=f"#{number}: nothing to draft"))
+            self._push_queue()
+            return
+        drafted = 0
+        for t in targets:
+            who = "the original post" if t.is_op else t.author
+            self._emit(StatusUpdate(line=f"drafting #{number} → {who}..."))
+            try:
+                payload = await self._draft_reply_fn(
+                    number=number, cwd=self._cwd, course_id=self._course_id,
+                    target_comment_id=t.target_comment_id)
+            except Exception:  # noqa: BLE001 - skip this target, keep the rest
+                continue
+            payload = self._reconcile_thread_id(number, payload)
+            self._drafts[(number, t.target_comment_id)] = payload
+            drafted += 1
+        self._items[number] = self._items[number].model_copy(
+            update={"draft_state": "ready" if drafted else "failed"})
+        self._emit(StatusUpdate(line=f"#{number}: {drafted} draft(s) ready"))
+        self._push_queue()
+
+    async def _autodraft_single(self, number: int) -> None:
         self._emit(StatusUpdate(line=f"drafting #{number}..."))
         try:
             payload = await self._draft_fn(
@@ -138,12 +190,7 @@ class CockpitLoop:
             self._emit(StatusUpdate(line=f"draft #{number} failed: {e}"))
             self._push_queue()
             return
-        # The watcher/seed event carries the authoritative GLOBAL thread id.
-        # The agent's returned thread_id is an unguided LLM value, so never
-        # trust it for routing: reconcile to the queue item's id.
-        item = self._items.get(number)
-        if item is not None:
-            payload = payload.model_copy(update={"thread_id": item.thread_id})
+        payload = self._reconcile_thread_id(number, payload)
         self._drafts[(number, payload.target_comment_id)] = payload
         await self._load_tree(number)
         self._items[number] = self._items[number].model_copy(

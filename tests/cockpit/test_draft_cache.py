@@ -5,6 +5,7 @@ import pytest
 from ed_bot.cockpit import draft_cache
 from ed_bot.cockpit.draft_cache import (
     load_cached, save_cached, update_payload, build_cached_draft_fn,
+    build_cached_reply_fn,
 )
 from ed_bot.cockpit.loop import CockpitLoop
 from ed_bot.cockpit.models import DraftPayload, UserCommand
@@ -96,6 +97,30 @@ async def test_stale_meta_regenerates(tmp_path):
     await fn(number=188, cwd=".", course_id=99)
     await fn(number=188, cwd=".", course_id=99)  # reply_count grew -> regen
     assert calls == [188, 188]
+
+
+async def test_reply_cache_keeps_a_draft_per_target(tmp_path):
+    calls = []
+
+    async def inner(*, number, cwd, course_id, target_comment_id):
+        calls.append(target_comment_id)
+        return DraftPayload(thread_id=8100188, number=number, question="q",
+                            body=f"reply {target_comment_id}", post_kind="reply",
+                            target_comment_id=target_comment_id)
+
+    async def fetch_meta(course_id, number):
+        return FRESH
+
+    fn = build_cached_reply_fn(inner=inner, fetch_meta=fetch_meta,
+                               cache_dir=tmp_path)
+    a = await fn(number=188, cwd=".", course_id=99, target_comment_id=10)
+    b = await fn(number=188, cwd=".", course_id=99, target_comment_id=20)
+    a2 = await fn(number=188, cwd=".", course_id=99, target_comment_id=10)  # hit
+    assert a.body == "reply 10" and b.body == "reply 20" and a2.body == "reply 10"
+    assert calls == [10, 20]  # both targets drafted once; 10 reused from cache
+    # both live in the same per-thread file, independently fresh
+    assert load_cached(tmp_path, 99, 188, FRESH, target=10).body == "reply 10"
+    assert load_cached(tmp_path, 99, 188, FRESH, target=20).body == "reply 20"
 
 
 async def test_meta_fetch_failure_drafts_fresh(tmp_path):
