@@ -1,8 +1,19 @@
 """Tests for approve/post flow with staleness re-check."""
 import pytest
 
-from ed_bot.cockpit.models import WatcherEvent, UserCommand, DraftPayload, ActionResult
+from ed_bot.cockpit.models import (
+    WatcherEvent, UserCommand, DraftPayload, ActionResult, QueueItem, QueueUpdate,
+)
 from ed_bot.cockpit.loop import CockpitLoop
+
+
+async def _ok_post(**kw):
+    return ActionResult(thread_id=kw["thread_id"], ok=True, posted_id=1,
+                        accepted=True)
+
+
+async def _not_answered(thread_id):
+    return False
 
 
 def _event(number=207):
@@ -20,6 +31,41 @@ def _payload(number=207):
 
 async def _draft(*, number, **kw):
     return _payload(number)
+
+
+@pytest.mark.anyio
+async def test_posting_removes_thread_from_rail():
+    emitted = []
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=emitted.append, post_fn=_ok_post,
+                       is_answered_fn=_not_answered)
+    await loop.handle(_event(207))  # creates the item + a single draft
+    await loop.handle(UserCommand(intent="approve", thread=207))
+    last = [e for e in emitted if isinstance(e, QueueUpdate)][-1]
+    assert all(i.number != 207 for i in last.items)  # gone from the rail
+    assert loop.targets_with_drafts(207) == []       # draft consumed
+
+
+@pytest.mark.anyio
+async def test_multidraft_thread_stays_until_all_posted():
+    emitted = []
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=None,
+                       emit=emitted.append, post_fn=_ok_post,
+                       is_answered_fn=_not_answered)
+    loop._items[207] = QueueItem(
+        thread_id=8100207, number=207, title="t",
+        category="Project 1 | Martingale", kind="new_thread",
+        draft_state="ready", status="needs_attention")
+    for cid in (10, 20):
+        loop._drafts[(207, cid)] = DraftPayload(
+            thread_id=8100207, number=207, question="q", body=f"reply {cid}",
+            post_kind="reply", target_comment_id=cid)
+    await loop.handle(UserCommand(intent="approve", thread=207, target=10))
+    after_first = [e for e in emitted if isinstance(e, QueueUpdate)][-1]
+    assert any(i.number == 207 for i in after_first.items)  # 20 still pending
+    await loop.handle(UserCommand(intent="approve", thread=207, target=20))
+    after_second = [e for e in emitted if isinstance(e, QueueUpdate)][-1]
+    assert all(i.number != 207 for i in after_second.items)  # now done -> gone
 
 
 @pytest.mark.anyio

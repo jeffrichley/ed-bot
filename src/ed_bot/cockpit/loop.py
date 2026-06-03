@@ -119,9 +119,10 @@ class CockpitLoop:
         return updated
 
     def _push_queue(self) -> None:
-        # Rejected/dismissed threads drop out of the rail; posted + flagged stay
-        # (marked) so the human can still see them.
-        items = [i for i in self._items.values() if i.status != "dismissed"]
+        # Fully-handled threads leave the rail: rejected (dismissed) and posted
+        # (all drafts sent). Flagged threads stay, marked, for a human.
+        items = [i for i in self._items.values()
+                 if i.status not in ("dismissed", "posted")]
         self._emit(QueueUpdate(items=items))
 
     def _is_actionable(self, ev: WatcherEvent) -> bool:
@@ -367,9 +368,14 @@ class CockpitLoop:
             thread_id=payload.thread_id, number=number, body=payload.body,
             post_kind=payload.post_kind, target_comment_id=payload.target_comment_id,
         )
-        if res.ok and number in self._items:
-            self._items[number] = self._items[number].model_copy(
-                update={"status": "posted"})
+        if res.ok:
+            # The draft is posted: drop it. When a thread has no drafts left to
+            # post, mark it posted so it leaves the rail (a single-question
+            # thread vanishes on post; a multi-question one stays until done).
+            self._drafts.pop((number, target), None)
+            item = self._items.get(number)
+            if item is not None and not self.targets_with_drafts(number):
+                self._items[number] = item.model_copy(update={"status": "posted"})
             self._emit(StatusUpdate(line=f"posted #{number}"))
             self._push_queue()
         return res
