@@ -240,3 +240,75 @@ async def chat_reply(
     """Produce a freeform conversational reply, with prior-turn context."""
     prompt = _build_chat_prompt(course_id, history or [], text)
     return await sdk_text(prompt=prompt, cwd=cwd)
+
+
+# --- edit-aware chat: the user can revise the active draft from the chat box ---
+
+_CHAT_EDIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reply": {"type": "string"},
+        "revised_body": {"type": ["string", "null"]},
+    },
+    "required": ["reply"],
+}
+
+_CHAT_EDIT_PREAMBLE = """You are ed-bot, operating the cockpit for EdStem course \
+{course_id}. The user is reviewing a DRAFT answer for a forum thread and is \
+chatting with you about it. You can revise the draft when they ask.
+
+THE FORUM THREAD (the student's post and any replies):
+<<<THREAD
+{thread_content}
+THREAD>>>
+
+THE CURRENT DRAFT ANSWER:
+<<<DRAFT
+{current_body}
+DRAFT>>>
+
+Use the project tools (ed-api, qmd, the guardrails and playbook under ~/.ed-bot) \
+if you need them, and respect the project guardrails (never reveal solution \
+code for graded work). Answer in the structured shape: `reply` is your short \
+message back to the user. If the user is asking you to change, reword, shorten, \
+expand, retone, or otherwise edit the answer, put the FULL revised answer in \
+`revised_body` (the complete new body, not a diff or a fragment). If they are \
+only asking a question or chatting, set `revised_body` to null and do NOT change \
+the answer.""".strip()
+
+
+def _build_chat_edit_prompt(course_id: int, history: list[tuple[str, str]],
+                            text: str, thread_content: str,
+                            current_body: str) -> str:
+    lines = [
+        _CHAT_EDIT_PREAMBLE.format(
+            course_id=course_id,
+            thread_content=(thread_content or "(thread text unavailable)"),
+            current_body=current_body),
+        "",
+        "Conversation so far:",
+    ]
+    for role, msg in history:
+        speaker = "User" if role == "you" else "ed-bot"
+        lines.append(f"{speaker}: {msg}")
+    lines.append(f"User: {text}")
+    return "\n".join(lines)
+
+
+async def chat_edit(
+    *,
+    text: str,
+    cwd: str,
+    course_id: int,
+    thread_content: str,
+    current_body: str,
+    history: list[tuple[str, str]] | None = None,
+    sdk_query: SdkQuery = default_sdk_query,
+) -> dict:
+    """Structured chat turn that can revise the active draft. Returns
+    ``{"reply": str, "revised_body": str | None}``. A non-empty ``revised_body``
+    is the full new draft text (humanized; guardrails respected)."""
+    prompt = _build_chat_edit_prompt(course_id, history or [], text,
+                                     thread_content, current_body)
+    prompt += _humanizer_directive()
+    return await sdk_query(prompt=prompt, schema=_CHAT_EDIT_SCHEMA, cwd=cwd)
