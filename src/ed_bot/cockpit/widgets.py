@@ -29,24 +29,24 @@ def queue_option_text(item: QueueItem) -> str:
 render_queue_line = queue_option_text
 
 
-def render_draft(d: DraftPayload) -> str:
-    """The center-panel text for a selected draft: the original forum post, then
-    the proposed answer. Action keys are NOT shown here — they live in the
-    footer (the app's BINDINGS)."""
-    lines = [
-        f"#{d.number}  ({d.project or 'unknown project'})  conf: {d.confidence}",
-    ]
+def forum_text(d: DraftPayload) -> str:
+    """The full forum thread (post + replies) for the read-only forum box, or the
+    short question if the agent did not capture the thread text."""
     if d.original_content.strip():
-        lines += ["", "─── FORUM THREAD ───", d.original_content.strip()]
-    else:
-        lines += ["", f"Q: {d.question}"]
-    lines += ["", "─── PROPOSED ANSWER ───", d.body]
-    if d.guardrails_checked:
-        lines += ["", f"guardrails checked: {', '.join(d.guardrails_checked)}"]
+        return d.original_content.strip()
+    return f"Q: {d.question}"
+
+
+def forum_box_title(d: DraftPayload) -> str:
+    """Border title for the forum box."""
+    return f"Forum #{d.number} · {d.project or 'unknown project'} · conf {d.confidence}"
+
+
+def draft_advisory(d: DraftPayload) -> str:
+    """Advisory line (Never-Reveal hits) for the draft box subtitle, or ""."""
     if d.guardrail_warnings:
-        lines += ["", "ADVISORY:"]
-        lines += [f"  - {w}" for w in d.guardrail_warnings]
-    return "\n".join(lines)
+        return "ADVISORY: " + "; ".join(d.guardrail_warnings)
+    return ""
 
 
 def render_chat_line(msg: ChatMessage) -> str:
@@ -85,11 +85,6 @@ class QueueRail(OptionList):
             self.highlighted = 0
 
 
-class DraftViewer(Static):
-    """Center panel: the selected thread's draft."""
-
-    def show(self, draft: DraftPayload | None) -> None:
-        self.update(render_draft(draft) if draft else "(select a thread)")
 
 
 class StatusBar(Static):

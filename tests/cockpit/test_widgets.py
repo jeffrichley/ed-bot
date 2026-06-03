@@ -1,6 +1,8 @@
 """Tests for the cockpit display widgets' pure render helpers."""
 from ed_bot.cockpit.models import QueueItem, DraftPayload
-from ed_bot.cockpit.widgets import render_queue_line, render_draft
+from ed_bot.cockpit.widgets import (
+    render_queue_line, forum_text, forum_box_title, draft_advisory,
+)
 
 
 def _item(**over):
@@ -27,48 +29,42 @@ def test_render_queue_line_shows_drafting_state():
     assert "drafting" in line.lower() or "..." in line
 
 
-def test_render_draft_includes_question_body_and_confidence():
+def test_forum_box_title_shows_number_project_confidence():
     d = DraftPayload(thread_id=8100207, number=207,
-                     question="How is Figure 1 graded?",
-                     body="The autograder checks returned values.",
-                     confidence="HIGH", guardrails_checked=["martingale"])
-    text = render_draft(d)
-    assert "How is Figure 1 graded?" in text
-    assert "The autograder checks returned values." in text
-    assert "HIGH" in text
+                     question="How is Figure 1 graded?", body="...",
+                     project="Project 1 - Martingale", confidence="HIGH")
+    title = forum_box_title(d)
+    assert "207" in title
+    assert "Martingale" in title
+    assert "HIGH" in title
 
 
-def test_render_draft_shows_guardrail_warnings():
-    d = DraftPayload(thread_id=1, number=1, question="q", body="b",
-                     guardrail_warnings=["possible Never-Reveal leak: 18/38"])
-    text = render_draft(d)
-    assert "18/38" in text
-
-
-def test_render_draft_shows_full_forum_thread_when_present():
-    d = DraftPayload(thread_id=8100207, number=207,
-                     question="short paraphrase",
+def test_forum_text_shows_full_thread_when_present():
+    d = DraftPayload(thread_id=8100207, number=207, question="short paraphrase",
                      original_content="student: My report is 8 pages but page 8 "
-                     "is blank. Will the page limit cost me points?\n\n"
-                     "staff: Please check the syllabus.",
+                     "is blank.\n\nstaff: Please check the syllabus.",
                      body="You're fine, page 8 is blank.")
-    text = render_draft(d)
-    # The reviewer reads the whole conversation (post + replies), not just a
-    # paraphrase of the opening question.
+    text = forum_text(d)
+    # The forum box shows the whole conversation, not just a paraphrase.
     assert "page 8 is blank" in text
     assert "Please check the syllabus." in text
-    assert "FORUM THREAD" in text
-    assert "PROPOSED ANSWER" in text
+    # The draft body does NOT bleed into the forum box.
+    assert "You're fine" not in text
 
 
-def test_render_draft_omits_action_keys_they_live_in_footer():
-    # Action keys are rendered by the app's BINDINGS (the footer), not inside
-    # the draft text. Keeping them here rendered mangled (Textual markup ate the
-    # brackets) and duplicated the footer.
-    d = DraftPayload(thread_id=1, number=1, question="q", body="b")
-    text = render_draft(d)
-    assert "approve" not in text
-    assert "[a]" not in text
+def test_forum_text_falls_back_to_question():
+    d = DraftPayload(thread_id=1, number=1, question="What is the page limit?",
+                     body="b", original_content="")
+    assert "What is the page limit?" in forum_text(d)
+
+
+def test_draft_advisory_lists_guardrail_warnings():
+    d = DraftPayload(thread_id=1, number=1, question="q", body="b",
+                     guardrail_warnings=["possible Never-Reveal leak: 18/38"])
+    assert "18/38" in draft_advisory(d)
+    # No warnings -> empty advisory.
+    clean = DraftPayload(thread_id=1, number=1, question="q", body="b")
+    assert draft_advisory(clean) == ""
 
 
 def test_render_chat_line_formats_role_and_text():

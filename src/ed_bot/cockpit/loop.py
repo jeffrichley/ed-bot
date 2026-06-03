@@ -62,6 +62,19 @@ class CockpitLoop:
     def draft(self, number: int) -> Optional[DraftPayload]:
         return self._drafts.get(number)
 
+    def update_draft_body(self, number: int, new_body: str) -> Optional[DraftPayload]:
+        """Replace a draft's body (e.g. after a manual edit), re-scanning the
+        guardrail advisory. Returns the updated payload, or None if no draft."""
+        draft = self._drafts.get(number)
+        if draft is None:
+            return None
+        warnings = (self._rescan_fn(new_body, draft.project)
+                    if self._rescan_fn is not None else draft.guardrail_warnings)
+        updated = draft.model_copy(
+            update={"body": new_body, "guardrail_warnings": warnings})
+        self._drafts[number] = updated
+        return updated
+
     def _push_queue(self) -> None:
         self._emit(QueueUpdate(items=list(self._items.values())))
 

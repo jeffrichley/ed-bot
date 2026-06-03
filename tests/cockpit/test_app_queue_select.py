@@ -1,8 +1,10 @@
 """Selecting a queue item opens its draft in the viewer."""
 import pytest
 
+from textual.widgets import TextArea
+
 from ed_bot.cockpit.app import CockpitApp
-from ed_bot.cockpit.widgets import QueueRail, DraftViewer
+from ed_bot.cockpit.widgets import QueueRail
 from ed_bot.cockpit.models import WatcherEvent, DraftPayload
 
 
@@ -32,5 +34,5 @@ async def test_selecting_queue_item_opens_its_draft():
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
-        draft_text = str(app.query_one(DraftViewer).content)
+        draft_text = app.query_one("#draft", TextArea).text
         assert "body 225" in draft_text

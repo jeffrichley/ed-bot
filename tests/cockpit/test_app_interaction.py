@@ -1,8 +1,9 @@
 """Tests for chat input and hotkeys driving the loop."""
 import pytest
 
+from textual.widgets import TextArea
+
 from ed_bot.cockpit.app import CockpitApp
-from ed_bot.cockpit.widgets import DraftViewer
 from ed_bot.cockpit.models import WatcherEvent, DraftPayload, ActionResult
 
 
@@ -37,7 +38,7 @@ async def test_typing_open_then_chat_post_it_posts():
         chat.value = "open 207"
         await pilot.press("enter")
         await pilot.pause()
-        assert "clean body" in str(app.query_one(DraftViewer).content)
+        assert "clean body" in app.query_one("#draft", TextArea).text
         chat.value = "post it"
         await pilot.press("enter")
         await pilot.pause()

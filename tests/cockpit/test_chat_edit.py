@@ -2,9 +2,10 @@
 import pytest
 
 from ed_bot.cockpit import agent
+from textual.widgets import TextArea
+
 from ed_bot.cockpit.app import CockpitApp
 from ed_bot.cockpit.loop import CockpitLoop
-from ed_bot.cockpit.widgets import DraftViewer
 from ed_bot.cockpit.models import (
     UserCommand, DraftPayload, ChatMessage, WatcherEvent,
 )
@@ -118,4 +119,4 @@ async def test_viewer_refreshes_when_active_draft_is_edited():
         app._active_thread = 207
         app._emit(_draft(number=207, body="EDITED IN CHAT"))
         await pilot.pause()
-        assert "EDITED IN CHAT" in str(app.query_one(DraftViewer).content)
+        assert "EDITED IN CHAT" in app.query_one("#draft", TextArea).text

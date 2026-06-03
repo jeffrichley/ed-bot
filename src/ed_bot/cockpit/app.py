@@ -11,8 +11,8 @@ import webbrowser
 from typing import Any, Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal
-from textual.widgets import Header, Footer, Input
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Header, Footer, Input, TextArea
 from textual import work
 
 from ed_bot.cockpit.command_parser import parse_command
@@ -23,18 +23,22 @@ from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, QueueUpdate, StatusUpdate, ActionResult, ChatMessage,
     DraftPayload,
 )
-from ed_bot.cockpit.widgets import QueueRail, DraftViewer, StatusBar, AlertBanner, ChatLog
+from ed_bot.cockpit.widgets import (
+    QueueRail, StatusBar, AlertBanner, ChatLog,
+    forum_text, forum_box_title, draft_advisory,
+)
 
 
 class CockpitApp(App):
     CSS_PATH = "app.tcss"
     BINDINGS = [
         ("a", "act('approve')", "approve"),
-        ("e", "act('edit')", "edit"),
+        ("e", "edit_draft", "edit"),
         ("r", "act('reject')", "reject"),
         ("f", "act('flag')", "flag"),
         ("s", "act('skip')", "skip"),
         ("o", "open_browser", "open in browser"),
+        ("ctrl+s", "save_draft", "save"),
         ("escape", "toggle_focus", "chat / actions"),
     ]
 
@@ -49,6 +53,8 @@ class CockpitApp(App):
         self._watch_stop: Optional[asyncio.Event] = None
         self._watch_queue: Optional[asyncio.Queue] = None
         self._active_thread: Optional[int] = None
+        self._editing: bool = False
+        self._edit_backup: str = ""
         self.loop = CockpitLoop(
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
@@ -60,7 +66,9 @@ class CockpitApp(App):
         yield AlertBanner(id="alert")
         with Horizontal(id="body"):
             yield QueueRail(id="queue")
-            yield DraftViewer(id="draft")
+            with Vertical(id="panes"):
+                yield TextArea("", id="forum", read_only=True, soft_wrap=True)
+                yield TextArea("", id="draft", read_only=True, soft_wrap=True)
         yield StatusBar(id="status")
         yield ChatLog(id="chatlog")
         yield Input(placeholder="type a command (e.g. 'post it')", id="chat")
@@ -70,7 +78,10 @@ class CockpitApp(App):
         """Paint initial placeholder state so the panels aren't blank, and put
         keyboard focus on the chat input (not the now-focusable queue rail)."""
         self.query_one(QueueRail).show([])
-        self.query_one(DraftViewer).show(None)
+        forum = self.query_one("#forum", TextArea)
+        forum.border_title = "Forum thread"
+        draft = self.query_one("#draft", TextArea)
+        draft.border_title = "Draft"
         self.query_one(StatusBar).show("ready")
         self.query_one("#chat", Input).focus()
         if self._fetch_events is not None:
@@ -78,6 +89,18 @@ class CockpitApp(App):
             self._watch_queue = asyncio.Queue()
             self._run_watch_producer()
             self._run_watch_consumer()
+
+    # --- draft display ---
+    def _show_draft(self, d: DraftPayload) -> None:
+        """Render a draft into the forum + draft boxes (not while editing)."""
+        if self._editing:
+            return
+        forum = self.query_one("#forum", TextArea)
+        forum.text = forum_text(d)
+        forum.border_title = forum_box_title(d)
+        draft = self.query_one("#draft", TextArea)
+        draft.text = d.body
+        draft.border_subtitle = draft_advisory(d)
 
     # --- loop -> UI bridge ---
     def _emit(self, payload: Any) -> None:
@@ -113,7 +136,7 @@ class CockpitApp(App):
         elif isinstance(payload, DraftPayload):
             # A chat edit revised the active draft -> refresh the viewer.
             if payload.number == self._active_thread:
-                self.query_one(DraftViewer).show(payload)
+                self._show_draft(payload)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -134,16 +157,49 @@ class CockpitApp(App):
         # act on the thread you just opened. Press Esc to jump to the chat box.
 
     def action_toggle_focus(self) -> None:
-        """Switch between the chat box (typing) and the queue (action hotkeys).
-
-        The single-letter actions and the chat input share the keyboard, so we
-        keep them in separate focus contexts: when the chat is focused you type,
-        when the queue is focused a/e/r/f/s/o act. Esc flips between them."""
+        """Esc: in edit mode, cancel the edit; otherwise switch focus between the
+        chat box (typing) and the queue (action hotkeys)."""
+        if self._editing:
+            draft = self.query_one("#draft", TextArea)
+            draft.text = self._edit_backup  # revert
+            self._exit_edit_mode()
+            self.query_one(StatusBar).show("edit canceled")
+            return
         chat = self.query_one("#chat", Input)
         if self.focused is chat:
             self.query_one(QueueRail).focus()
         else:
             chat.focus()
+
+    def action_edit_draft(self) -> None:
+        """Enter edit mode: make the draft box editable and focus it."""
+        if self._active_thread is None or self.loop.draft(self._active_thread) is None:
+            self.query_one(StatusBar).show("no active draft to edit")
+            return
+        draft = self.query_one("#draft", TextArea)
+        self._edit_backup = draft.text
+        self._editing = True
+        draft.read_only = False
+        draft.border_title = "Draft — EDITING (^S save · Esc cancel)"
+        draft.focus()
+
+    def action_save_draft(self) -> None:
+        """Ctrl+S: write the edited text back to the draft and exit edit mode."""
+        if not self._editing:
+            return
+        new_body = self.query_one("#draft", TextArea).text
+        updated = self.loop.update_draft_body(self._active_thread, new_body)
+        self._exit_edit_mode()
+        if updated is not None:
+            self._show_draft(updated)
+            self.query_one(StatusBar).show(f"saved draft #{self._active_thread}")
+
+    def _exit_edit_mode(self) -> None:
+        draft = self.query_one("#draft", TextArea)
+        draft.read_only = True
+        draft.border_title = "Draft"
+        self._editing = False
+        self.query_one(QueueRail).focus()
 
     def action_act(self, intent: str) -> None:
         if self._active_thread is None:
@@ -230,4 +286,4 @@ class CockpitApp(App):
             return
         if isinstance(result, DraftPayload):
             self._active_thread = result.number
-            self.query_one(DraftViewer).show(result)
+            self._show_draft(result)
