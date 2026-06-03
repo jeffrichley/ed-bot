@@ -36,6 +36,7 @@ class CockpitApp(App):
         ("r", "act('reject')", "reject"),
         ("f", "act('flag')", "flag"),
         ("s", "act('skip')", "skip"),
+        ("d", "draft_reply_here", "draft reply here"),
         ("o", "open_browser", "open in browser"),
         ("ctrl+s", "save_draft", "save"),
         ("escape", "toggle_focus", "chat / actions"),
@@ -230,8 +231,13 @@ class CockpitApp(App):
         elif isinstance(payload, StatusUpdate):
             self.query_one(StatusBar).show(payload.line)
         elif isinstance(payload, ActionResult):
-            ok = "posted" if payload.ok else f"not posted: {payload.message}"
-            self.query_one(StatusBar).show(ok)
+            if payload.ok:
+                # Surface a warning on success too (e.g. posted but could not be
+                # accepted on a post-type thread -> the human must resolve it).
+                msg = f"posted — {payload.message}" if payload.message else "posted"
+            else:
+                msg = f"not posted: {payload.message}"
+            self.query_one(StatusBar).show(msg)
         elif isinstance(payload, ChatMessage):
             self.query_one(ChatLog).add(payload)
         elif isinstance(payload, DraftPayload):
@@ -311,6 +317,28 @@ class CockpitApp(App):
             return
         self.inject_command(UserCommand(intent=intent, thread=self._active_thread,
                                         target=self._active_target))
+
+    def action_draft_reply_here(self) -> None:
+        """`d`: draft a reply for the selected comment if it has none yet."""
+        if self._active_thread is None:
+            self.query_one(StatusBar).show("no active thread")
+            return
+        if self.loop.draft(self._active_thread, self._active_target) is not None:
+            self.query_one(StatusBar).show("this comment already has a draft")
+            return
+        self._draft_one_worker(self._active_thread, self._active_target)
+
+    @work(group="draft")
+    async def _draft_one_worker(self, number: int, target) -> None:
+        self.query_one(StatusBar).show(f"drafting a reply for #{number}...")
+        payload = await self.loop.draft_one(number, target)
+        if not self.is_running or not self._screen_stack:
+            return
+        if payload is not None and number == self._active_thread:
+            self._show_draft(payload)
+            self.query_one(StatusBar).show(f"drafted a reply for #{number}")
+        elif payload is None:
+            self.query_one(StatusBar).show(f"could not draft a reply for #{number}")
 
     def _thread_url(self, number: int) -> Optional[str]:
         """The EdStem discussion URL for a queued thread number, or None if the

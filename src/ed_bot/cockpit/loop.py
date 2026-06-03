@@ -86,6 +86,22 @@ class CockpitLoop:
         """The thread's comment tree (CommentNode), or None if not fetched."""
         return self._trees.get(number)
 
+    async def draft_one(self, number: int,
+                        target: Optional[int]) -> Optional[DraftPayload]:
+        """Draft a reply for one comment on demand (the `d` action). Returns the
+        stored payload, or None if there is no reply fn or the draft failed."""
+        if self._draft_reply_fn is None:
+            return None
+        try:
+            payload = await self._draft_reply_fn(
+                number=number, cwd=self._cwd, course_id=self._course_id,
+                target_comment_id=target)
+        except Exception:  # noqa: BLE001 - surface as a failed on-demand draft
+            return None
+        payload = self._reconcile_thread_id(number, payload)
+        self._drafts[(number, target)] = payload
+        return payload
+
     def update_draft_body(self, number: int, new_body: str,
                           target: Optional[int] = None) -> Optional[DraftPayload]:
         """Replace a draft's body (e.g. after a manual edit), re-scanning the
@@ -233,8 +249,10 @@ class CockpitLoop:
         if cmd.intent == "check_forum":
             self._emit_queue_summary()
             return None
-        if cmd.intent == "freeform" and (
+        if cmd.intent in ("freeform", "edit") and (
                 self._chat_fn is not None or self._chat_edit_fn is not None):
+            # "edit: shorten this" parses to intent=edit; route it through the
+            # same edit-aware chat path as freeform so it isn't a silent no-op.
             await self._handle_freeform(cmd.text or "", cmd.thread, cmd.target)
             return None
         return None
@@ -327,6 +345,15 @@ class CockpitLoop:
         payload = self._drafts.get((number, target))
         if payload is None:
             return ActionResult(thread_id=0, ok=False, message="no draft to post")
+        # Never post a placeholder: an empty body, or a "NEEDS HUMAN" flag the
+        # agent returns when it is unsure or the thread is already handled.
+        body = (payload.body or "").strip()
+        if not body or body.upper().startswith("NEEDS HUMAN"):
+            self._emit(StatusUpdate(
+                line=f"#{number}: draft is NEEDS HUMAN / empty — not posting"))
+            return ActionResult(
+                thread_id=payload.thread_id, ok=False,
+                message="draft is empty or flagged NEEDS HUMAN; not posting")
         # Staleness guard applies ONLY to new top-level answers. A follow-up
         # reply legitimately targets an already-answered thread, so is_answered
         # must not block it.

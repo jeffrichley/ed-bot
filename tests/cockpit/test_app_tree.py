@@ -125,6 +125,42 @@ async def test_navigating_tree_shows_each_comments_own_draft():
         assert app.query_one("#draft", TextArea).text == "reply to 20"
 
 
+async def test_d_drafts_a_reply_on_demand_for_an_undrafted_comment():
+    # Tree: only comment 10 is auto-drafted; the OP has no draft.
+    op = CommentNode(
+        comment_id=None, author="Jane", role="student", is_staff=False, text="OP",
+        children=[CommentNode(comment_id=10, author="Bob", role="student",
+                              is_staff=False, text="Q1", children=[],
+                              needs_reply=True)])
+
+    async def draft_fn(*, number, **kw):
+        return DraftPayload(thread_id=8100207, number=number, question="q", body="x")
+
+    async def draft_reply_fn(*, number, cwd, course_id, target_comment_id):
+        return DraftPayload(thread_id=8100207, number=number, question="q",
+                            body=f"reply to {target_comment_id}", post_kind="reply",
+                            target_comment_id=target_comment_id)
+
+    async def fetch_tree_fn(course_id, number):
+        return op
+
+    app = CockpitApp(cwd=".", course_id=98559, draft_fn=draft_fn,
+                     fetch_tree_fn=fetch_tree_fn, draft_reply_fn=draft_reply_fn)
+    async with app.run_test() as pilot:
+        await _open(app, pilot, 207)
+        assert app.loop.draft(207, None) is None      # OP not auto-drafted
+        # Select the OP node and draft a reply on demand.
+        tree = app.query_one("#tree", Tree)
+        tree.move_cursor(app._tree_nodes[None])
+        await pilot.pause()
+        assert app._active_target is None
+        app.action_draft_reply_here()
+        for _ in range(6):
+            await pilot.pause()
+        assert app.loop.draft(207, None) is not None   # drafted on demand
+        assert app.loop.draft(207, None).body == "reply to None"
+
+
 async def test_top_level_answer_targets_the_op_comment():
     op = _tree()
 
