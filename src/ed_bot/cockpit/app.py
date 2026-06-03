@@ -94,8 +94,11 @@ class CockpitApp(App):
         if self._fetch_events is not None:
             self._watch_stop = asyncio.Event()
             self._watch_queue = asyncio.Queue()
+            self.sub_title = f"watching · starting · every {int(self._watch_interval)}s"
             self._run_watch_producer()
             self._run_watch_consumer()
+        else:
+            self.sub_title = "not watching (--no-watch)"
 
     # --- draft display ---
     def _show_draft(self, d: DraftPayload) -> None:
@@ -399,7 +402,15 @@ class CockpitApp(App):
             course_id=self._course_id, queue=self._watch_queue,
             fetch_events=self._fetch_events,
             interval_seconds=self._watch_interval, stop=self._watch_stop,
+            on_poll=self._on_poll_tick,
         )
+
+    def _on_poll_tick(self) -> None:
+        """Heartbeat: stamp the header so the operator can see polling is alive."""
+        from datetime import datetime
+        now = datetime.now().strftime("%H:%M:%S")
+        self.sub_title = (f"watching · last checked {now} · "
+                          f"every {int(self._watch_interval)}s")
 
     @work(group="watch")
     async def _run_watch_consumer(self) -> None:

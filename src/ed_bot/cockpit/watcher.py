@@ -30,11 +30,15 @@ async def poll_once(*, course_id: int, queue: "asyncio.Queue",
 
 async def watch_loop(*, course_id: int, queue: "asyncio.Queue",
                      fetch_events: FetchEvents, interval_seconds: float,
-                     stop: "asyncio.Event") -> None:
-    """Poll on an interval until ``stop`` is set."""
+                     stop: "asyncio.Event",
+                     on_poll: "Callable[[], None] | None" = None) -> None:
+    """Poll on an interval until ``stop`` is set. ``on_poll`` (if given) is
+    called after each poll cycle, so the UI can show a 'last checked' heartbeat."""
     while not stop.is_set():
         await poll_once(course_id=course_id, queue=queue,
                         fetch_events=fetch_events)
+        if on_poll is not None:
+            on_poll()
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
         except asyncio.TimeoutError:
