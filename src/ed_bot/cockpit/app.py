@@ -45,7 +45,7 @@ class CockpitApp(App):
     def __init__(self, *, cwd: str, course_id: int, draft_fn,
                  post_fn=None, is_answered_fn=None, fetch_events=None,
                  chat_fn=None, chat_edit_fn=None, rescan_fn=None,
-                 watch_interval: float = 120.0) -> None:
+                 persist_fn=None, watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
         self._course_id = course_id
@@ -59,6 +59,7 @@ class CockpitApp(App):
             cwd=cwd, course_id=course_id, draft_fn=draft_fn,
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
             chat_fn=chat_fn, chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
+            persist_fn=persist_fn,
         )
 
     def compose(self) -> ComposeResult:

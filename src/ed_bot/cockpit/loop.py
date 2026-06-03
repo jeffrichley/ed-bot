@@ -23,6 +23,8 @@ ChatFn = Callable[..., Awaitable[str]]
 ChatEditFn = Callable[..., Awaitable[dict]]
 # Re-scan a revised body against its project guardrails -> advisory warnings.
 RescanFn = Callable[[str, Optional[str]], list[str]]
+# Persist a draft (after an edit) so curated wording survives a restart.
+PersistFn = Callable[[int, DraftPayload], None]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -34,6 +36,7 @@ class CockpitLoop:
                  chat_fn: "ChatFn | None" = None,
                  chat_edit_fn: "ChatEditFn | None" = None,
                  rescan_fn: "RescanFn | None" = None,
+                 persist_fn: "PersistFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -44,6 +47,7 @@ class CockpitLoop:
         self._chat_fn = chat_fn
         self._chat_edit_fn = chat_edit_fn
         self._rescan_fn = rescan_fn
+        self._persist_fn = persist_fn
         self._items: dict[int, QueueItem] = {}
         self._drafts: dict[int, DraftPayload] = {}
         # Chat conversation memory: (role, text) per turn, role in you|ed-bot.
@@ -73,6 +77,8 @@ class CockpitLoop:
         updated = draft.model_copy(
             update={"body": new_body, "guardrail_warnings": warnings})
         self._drafts[number] = updated
+        if self._persist_fn is not None:
+            self._persist_fn(number, updated)
         return updated
 
     def _push_queue(self) -> None:
@@ -186,6 +192,8 @@ class CockpitLoop:
             updated = draft.model_copy(
                 update={"body": new_body, "guardrail_warnings": warnings})
             self._drafts[number] = updated
+            if self._persist_fn is not None:
+                self._persist_fn(number, updated)
             self._emit(updated)  # the app re-shows it in the draft viewer
             if not reply:
                 reply = f"Updated the draft for #{number}."
