@@ -15,17 +15,23 @@ Screen {
 }
 
 #queue {
-    width: 38%;
+    width: 24%;
     height: 100%;
     border: solid $primary;
 }
 
-#panes {
+#tree {
+    width: 34%;
+    height: 100%;
+    border: solid $primary;
+}
+
+#right {
     width: 1fr;
     height: 100%;
 }
 
-#forum {
+#comment {
     height: 1fr;
     border: solid $primary;
 }

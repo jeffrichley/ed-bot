@@ -85,6 +85,18 @@ def build_fetch_detail(*, client):
     return fetch_detail
 
 
+def build_fetch_tree_fn(*, client):
+    """Fetch a thread and build its CommentNode tree, off the loop."""
+    import asyncio
+    from ed_bot.cockpit.thread_tree import build_comment_tree
+
+    async def fetch_tree(course_id: int, number: int):
+        detail = await asyncio.to_thread(
+            client.threads.get_by_number, course_id, number)
+        return build_comment_tree(detail)
+    return fetch_tree
+
+
 def build_tree_enriched_draft_fn(*, base, fetch_detail):
     """Wrap a draft fn so the draft's ``original_content`` is the deterministic,
     indented comment tree (with the targeted comment marked) instead of the
@@ -187,6 +199,8 @@ def main() -> None:  # pragma: no cover - thin live wiring
     def persist_fn(number: int, payload) -> None:
         update_payload(cache_dir, course_id, number, payload)
 
+    fetch_tree_fn = build_fetch_tree_fn(client=client)
+
     fetch_events = None
     if not args.no_watch:
         store = WatchAlertStore(bot_dir / "state" / "tracker.db")
@@ -197,7 +211,7 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      post_fn=post_fn, is_answered_fn=is_answered_fn,
                      fetch_events=fetch_events, chat_fn=chat_fn,
                      chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
-                     persist_fn=persist_fn,
+                     persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)

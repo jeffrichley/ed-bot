@@ -25,6 +25,8 @@ ChatEditFn = Callable[..., Awaitable[dict]]
 RescanFn = Callable[[str, Optional[str]], list[str]]
 # Persist a draft (after an edit) so curated wording survives a restart.
 PersistFn = Callable[[int, DraftPayload], None]
+# Fetch a thread's comment tree (CommentNode) for the tree view.
+FetchTreeFn = Callable[[int, int], Awaitable[Any]]  # (course_id, number) -> CommentNode
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -37,6 +39,7 @@ class CockpitLoop:
                  chat_edit_fn: "ChatEditFn | None" = None,
                  rescan_fn: "RescanFn | None" = None,
                  persist_fn: "PersistFn | None" = None,
+                 fetch_tree_fn: "FetchTreeFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -48,8 +51,10 @@ class CockpitLoop:
         self._chat_edit_fn = chat_edit_fn
         self._rescan_fn = rescan_fn
         self._persist_fn = persist_fn
+        self._fetch_tree_fn = fetch_tree_fn
         self._items: dict[int, QueueItem] = {}
         self._drafts: dict[int, DraftPayload] = {}
+        self._trees: dict[int, Any] = {}  # number -> CommentNode (the OP node)
         # Chat conversation memory: (role, text) per turn, role in you|ed-bot.
         # Capped at the last ``chat_history_limit`` turns so the prompt (and
         # cost) stays bounded over a long session.
@@ -65,6 +70,10 @@ class CockpitLoop:
 
     def draft(self, number: int) -> Optional[DraftPayload]:
         return self._drafts.get(number)
+
+    def tree(self, number: int):
+        """The thread's comment tree (CommentNode), or None if not fetched."""
+        return self._trees.get(number)
 
     def update_draft_body(self, number: int, new_body: str) -> Optional[DraftPayload]:
         """Replace a draft's body (e.g. after a manual edit), re-scanning the
@@ -128,10 +137,20 @@ class CockpitLoop:
         if item is not None:
             payload = payload.model_copy(update={"thread_id": item.thread_id})
         self._drafts[number] = payload
+        await self._load_tree(number)
         self._items[number] = self._items[number].model_copy(
             update={"draft_state": "ready"})
         self._emit(StatusUpdate(line=f"#{number} ready"))
         self._push_queue()
+
+    async def _load_tree(self, number: int) -> None:
+        """Fetch and store the thread's comment tree (best effort)."""
+        if self._fetch_tree_fn is None:
+            return
+        try:
+            self._trees[number] = await self._fetch_tree_fn(self._course_id, number)
+        except Exception:  # noqa: BLE001 - the tree view is optional context
+            pass
 
     async def _on_command(self, cmd: UserCommand):
         if cmd.intent == "open" and cmd.thread is not None:
