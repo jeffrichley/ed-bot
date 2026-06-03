@@ -20,9 +20,18 @@ Screen {
     border: solid $primary;
 }
 
-#draft {
+#panes {
     width: 1fr;
     height: 100%;
+}
+
+#forum {
+    height: 1fr;
+    border: solid $primary;
+}
+
+#draft {
+    height: 1fr;
     border: solid $primary;
 }
 
