@@ -29,3 +29,53 @@ async def test_app_watcher_drafts_polled_event():
                 break
         assert app.loop.queue_item(42) is not None
         assert app.loop.draft(42).body == "drafted body"
+
+
+async def test_watch_loop_calls_on_poll_each_cycle():
+    import asyncio
+    from ed_bot.cockpit.watcher import watch_loop
+
+    ticks = []
+    stop = asyncio.Event()
+    polls = [0]
+
+    async def fetch_events(cid):
+        polls[0] += 1
+        if polls[0] >= 2:
+            stop.set()
+        return []
+
+    await watch_loop(course_id=1, queue=asyncio.Queue(), fetch_events=fetch_events,
+                     interval_seconds=0.01, stop=stop, on_poll=lambda: ticks.append(1))
+    assert len(ticks) >= 2  # heartbeat fired each poll
+
+
+async def test_app_shows_watching_heartbeat():
+    from ed_bot.cockpit.app import CockpitApp
+
+    async def fetch_events(cid):
+        return []
+
+    async def draft_fn(*, number, cwd, course_id):  # pragma: no cover - unused
+        raise AssertionError
+
+    app = CockpitApp(cwd=".", course_id=1, draft_fn=draft_fn,
+                     fetch_events=fetch_events, watch_interval=0.05)
+    async with app.run_test() as pilot:
+        for _ in range(20):
+            await pilot.pause()
+            if "last checked" in (app.sub_title or ""):
+                break
+        assert "watching" in app.sub_title and "last checked" in app.sub_title
+
+
+async def test_no_watch_says_not_watching():
+    from ed_bot.cockpit.app import CockpitApp
+
+    async def draft_fn(*, number, cwd, course_id):  # pragma: no cover
+        raise AssertionError
+
+    app = CockpitApp(cwd=".", course_id=1, draft_fn=draft_fn, fetch_events=None)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "not watching" in app.sub_title
