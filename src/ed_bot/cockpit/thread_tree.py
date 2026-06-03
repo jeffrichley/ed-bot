@@ -159,3 +159,30 @@ def flatten(op: CommentNode) -> list[tuple[int, CommentNode]]:
 
     visit(op, 0)
     return out
+
+
+def render_tree(op: CommentNode, *, target_comment_id: "int | None" = None,
+                target_is_set: bool = True) -> str:
+    """Indented plain-text rendering of the comment tree for the forum box.
+
+    Each node shows ``Author (role)`` with markers: ``needs reply`` for a node
+    the triage flagged, and ``DRAFT ANSWERS THIS`` for the node the current
+    draft targets (the OP when ``target_comment_id`` is None). ``target_is_set``
+    is False when no draft is active, so nothing is marked as the target."""
+    lines: list[str] = []
+    for depth, node in flatten(op):
+        pad = "  " * depth
+        who = "Original post — " if node.is_op else ""
+        who += f"{node.author} ({node.role})"
+        marks = []
+        if node.needs_reply:
+            marks.append("● needs reply")
+        if target_is_set and node.comment_id == target_comment_id:
+            marks.append("◄── DRAFT ANSWERS THIS")
+        header = pad + who + ("    " + "  ".join(marks) if marks else "")
+        lines.append(header)
+        body = (node.text or "").strip() or "(no text)"
+        for line in body.splitlines() or [""]:
+            lines.append(pad + "    " + line)
+        lines.append("")
+    return "\n".join(lines).rstrip()

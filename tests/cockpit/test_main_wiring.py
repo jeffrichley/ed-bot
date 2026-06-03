@@ -1,8 +1,48 @@
 """Tests for the entry-point wiring helpers (no live app run)."""
+from types import SimpleNamespace
+
 import pytest
 
-from ed_bot.cockpit.__main__ import build_draft_fn, build_seed_event, build_chat_fn
-from ed_bot.cockpit.models import WatcherEvent
+from ed_bot.cockpit.__main__ import (
+    build_draft_fn, build_seed_event, build_chat_fn, build_tree_enriched_draft_fn,
+)
+from ed_bot.cockpit.models import WatcherEvent, DraftPayload
+
+
+@pytest.mark.anyio
+async def test_tree_enriched_draft_fn_renders_tree_into_original_content():
+    async def base(*, number, cwd, course_id):
+        return DraftPayload(thread_id=8100188, number=number, question="q",
+                            body="answer", original_content="AGENT FLAT TEXT",
+                            post_kind="reply", target_comment_id=42)
+
+    async def fetch_detail(course_id, number):
+        staff = SimpleNamespace(name="Steven", role="staff", is_staff=True)
+        comment = SimpleNamespace(id=42, user_id=0, author=staff,
+                                  content="staff reply", replies=[])
+        return SimpleNamespace(
+            author=SimpleNamespace(name="Jane", role="student", is_staff=False),
+            content="OP text", comments=[comment], users={}, is_answered=True)
+
+    fn = build_tree_enriched_draft_fn(base=base, fetch_detail=fetch_detail)
+    out = await fn(number=188, cwd=".", course_id=99)
+    assert "AGENT FLAT TEXT" not in out.original_content  # replaced by the tree
+    assert "Steven (staff)" in out.original_content
+    assert out.original_content.startswith("Original post")
+
+
+@pytest.mark.anyio
+async def test_tree_enriched_draft_fn_keeps_draft_if_fetch_fails():
+    async def base(*, number, cwd, course_id):
+        return DraftPayload(thread_id=1, number=number, question="q", body="answer",
+                            original_content="KEEP THIS")
+
+    async def fetch_detail(course_id, number):
+        raise RuntimeError("network down")
+
+    fn = build_tree_enriched_draft_fn(base=base, fetch_detail=fetch_detail)
+    out = await fn(number=1, cwd=".", course_id=99)
+    assert out.original_content == "KEEP THIS"  # fell back, did not crash
 
 
 def test_build_seed_event_targets_thread_number():

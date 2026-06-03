@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 
 from ed_bot.cockpit.thread_tree import (
-    build_comment_tree, actionable_targets, flatten,
+    build_comment_tree, actionable_targets, flatten, render_tree,
 )
 
 
@@ -114,6 +114,32 @@ def test_flatten_gives_depth_ordered_nodes():
     assert flat[0][0] == 0 and flat[0][1].is_op
     depths = [d for d, _ in flat]
     assert depths == [0, 1, 2]
+
+
+def test_render_tree_indents_and_marks_target():
+    follow = _comment(JANE, "But what about variance?")
+    staff = _comment(STAFF, "Bets are independent.", replies=[follow])
+    detail = _detail(JANE, [staff], is_answered=True, content="I'm confused")
+    op = build_comment_tree(detail)
+    out = render_tree(op, target_comment_id=follow.id)
+    # OP at column 0, staff indented, follow-up indented further.
+    lines = out.splitlines()
+    assert lines[0].startswith("Original post")
+    assert "Steven (staff)" in out
+    # The targeted follow-up is marked; the staff comment is not.
+    target_line = next(l for l in lines if "But what about variance" not in l
+                       and "DRAFT ANSWERS THIS" in l)
+    assert "Jane (student)" in target_line
+    assert "Steven (staff)    ◄── DRAFT ANSWERS THIS" not in out
+    # The follow-up was flagged as needing a reply.
+    assert "needs reply" in out
+
+
+def test_render_tree_no_target_marks_nothing():
+    detail = _detail(JANE, [_comment(BOB, "hi")], is_answered=False)
+    op = build_comment_tree(detail)
+    out = render_tree(op, target_comment_id=None, target_is_set=False)
+    assert "DRAFT ANSWERS THIS" not in out
 
 
 # helper: find a node by comment id
