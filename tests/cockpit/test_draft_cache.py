@@ -118,7 +118,7 @@ async def test_loop_persists_manual_edit():
     loop = CockpitLoop(cwd=".", course_id=99, draft_fn=None, emit=lambda e: None,
                        rescan_fn=lambda b, p: [],
                        persist_fn=lambda n, p: saved.append((n, p.body)))
-    loop._drafts[188] = _draft(body="OLD")
+    loop._drafts[(188, None)] = _draft(body="OLD")
     loop.update_draft_body(188, "HAND EDITED")
     assert saved == [(188, "HAND EDITED")]
 
@@ -132,6 +132,6 @@ async def test_loop_persists_chat_edit():
     loop = CockpitLoop(cwd=".", course_id=99, draft_fn=None, emit=lambda e: None,
                        chat_edit_fn=chat_edit_fn, rescan_fn=lambda b, p: [],
                        persist_fn=lambda n, p: saved.append((n, p.body)))
-    loop._drafts[188] = _draft(body="OLD")
+    loop._drafts[(188, None)] = _draft(body="OLD")
     await loop.handle(UserCommand(intent="freeform", thread=188, text="reword"))
     assert saved == [(188, "CHAT EDITED")]

@@ -54,6 +54,7 @@ class CockpitApp(App):
         self._watch_stop: Optional[asyncio.Event] = None
         self._watch_queue: Optional[asyncio.Queue] = None
         self._active_thread: Optional[int] = None
+        self._active_target: Optional[int] = None  # selected comment (None = OP)
         self._editing: bool = False
         self._edit_backup: str = ""
         self.loop = CockpitLoop(
@@ -206,6 +207,7 @@ class CockpitApp(App):
             return
         self.query_one(ChatLog).add(ChatMessage(role="you", text=text))
         cmd = parse_command(text, active_thread=self._active_thread)
+        cmd = cmd.model_copy(update={"target": self._active_target})
         self.inject_command(cmd)
 
     def on_option_list_option_selected(self, event) -> None:
@@ -234,7 +236,8 @@ class CockpitApp(App):
 
     def action_edit_draft(self) -> None:
         """Enter edit mode: make the draft box editable and focus it."""
-        if self._active_thread is None or self.loop.draft(self._active_thread) is None:
+        if (self._active_thread is None
+                or self.loop.draft(self._active_thread, self._active_target) is None):
             self.query_one(StatusBar).show("no active draft to edit")
             return
         draft = self.query_one("#draft", TextArea)
@@ -249,7 +252,8 @@ class CockpitApp(App):
         if not self._editing:
             return
         new_body = self.query_one("#draft", TextArea).text
-        updated = self.loop.update_draft_body(self._active_thread, new_body)
+        updated = self.loop.update_draft_body(self._active_thread, new_body,
+                                              self._active_target)
         self._exit_edit_mode()
         if updated is not None:
             self._show_draft(updated)
@@ -266,7 +270,8 @@ class CockpitApp(App):
         if self._active_thread is None:
             self.query_one(StatusBar).show("no active thread")
             return
-        self.inject_command(UserCommand(intent=intent, thread=self._active_thread))
+        self.inject_command(UserCommand(intent=intent, thread=self._active_thread,
+                                        target=self._active_target))
 
     def _thread_url(self, number: int) -> Optional[str]:
         """The EdStem discussion URL for a queued thread number, or None if the
@@ -347,4 +352,5 @@ class CockpitApp(App):
             return
         if isinstance(result, DraftPayload):
             self._active_thread = result.number
+            self._active_target = result.target_comment_id
             self._show_draft(result)
