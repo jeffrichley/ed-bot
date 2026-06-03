@@ -79,10 +79,11 @@ async def test_opening_thread_renders_tree_and_target_comment():
     async with app.run_test() as pilot:
         await _open(app, pilot, 207)
         labels = _all_labels(app.query_one("#tree", Tree).root)
-        assert any("Original post" in l for l in labels)
-        assert any("Steven (staff)" in l for l in labels)
-        # the follow-up is marked as needing a reply AND as the draft target
-        assert any("needs reply" in l and "DRAFT" in l for l in labels)
+        assert any("📌" in l for l in labels)              # the original post
+        assert any("🛡️" in l and "Steven" in l for l in labels)  # staff role
+        assert any("🎓" in l and "Jane" in l for l in labels)     # student role
+        # the follow-up is marked as needing a reply (❓) AND the draft target (✏️)
+        assert any("❓" in l and "✏️" in l for l in labels)
         # the draft shows, and the comment box shows the targeted comment's text
         assert app.query_one("#draft", TextArea).text == "draft body"
         assert "follow-up question" in app.query_one("#comment", TextArea).text

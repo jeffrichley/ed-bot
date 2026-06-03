@@ -126,14 +126,19 @@ class CockpitApp(App):
         for child in cn.children:
             self._add_node(node, child, target=target)
 
+    # Compact tree labels: role + markers as emoji to save horizontal room.
+    # 🎓 student · 🛡️ staff · 📌 original post · ❓ needs a reply · ✏️ drafted target
     @staticmethod
     def _node_label(cn, target) -> str:
-        who = "Original post" if cn.is_op else f"{cn.author} ({cn.role})"
+        role_icon = "🛡️" if cn.is_staff else "🎓"
+        who = f"{role_icon} {cn.author}"
+        if cn.is_op:
+            who = f"📌 {who}"
         marks = ""
         if cn.needs_reply:
-            marks += "  ● needs reply"
+            marks += " ❓"
         if cn.comment_id == target:
-            marks += "  ◄ DRAFT"
+            marks += " ✏️"
         return who + marks
 
     @staticmethod
