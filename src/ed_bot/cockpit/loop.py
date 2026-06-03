@@ -103,7 +103,10 @@ class CockpitLoop:
         return updated
 
     def _push_queue(self) -> None:
-        self._emit(QueueUpdate(items=list(self._items.values())))
+        # Rejected/dismissed threads drop out of the rail; posted + flagged stay
+        # (marked) so the human can still see them.
+        items = [i for i in self._items.values() if i.status != "dismissed"]
+        self._emit(QueueUpdate(items=items))
 
     def _is_actionable(self, ev: WatcherEvent) -> bool:
         if ev.kind in ("error", "recovered"):
@@ -218,6 +221,15 @@ class CockpitLoop:
             return None
         if cmd.intent == "approve" and cmd.thread is not None:
             return await self._approve(cmd.thread, cmd.target)
+        if cmd.intent == "reject" and cmd.thread is not None:
+            self._reject(cmd.thread)
+            return None
+        if cmd.intent == "flag" and cmd.thread is not None:
+            self._flag(cmd.thread)
+            return None
+        if cmd.intent == "skip" and cmd.thread is not None:
+            self._emit(StatusUpdate(line=f"skipped #{cmd.thread}"))
+            return None
         if cmd.intent == "check_forum":
             self._emit_queue_summary()
             return None
@@ -281,6 +293,24 @@ class CockpitLoop:
             if not reply:
                 reply = f"Updated the draft for #{number}."
         return reply
+
+    def _reject(self, number: int) -> None:
+        """Discard this thread: mark it dismissed so it drops out of the rail.
+        No forum action."""
+        item = self._items.get(number)
+        if item is not None:
+            self._items[number] = item.model_copy(update={"status": "dismissed"})
+            self._emit(StatusUpdate(line=f"rejected #{number}"))
+            self._push_queue()
+
+    def _flag(self, number: int) -> None:
+        """Leave this thread for a human: mark it flagged (stays in the rail,
+        marked). No forum action."""
+        item = self._items.get(number)
+        if item is not None:
+            self._items[number] = item.model_copy(update={"draft_state": "flagged"})
+            self._emit(StatusUpdate(line=f"flagged #{number} for a human"))
+            self._push_queue()
 
     def _emit_queue_summary(self) -> None:
         items = list(self._items.values())
