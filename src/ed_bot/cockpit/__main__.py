@@ -75,6 +75,36 @@ def build_fetch_meta(*, client):
     return fetch_meta
 
 
+def build_fetch_detail(*, client):
+    """Fetch a thread's full detail (comments tree + users), off the loop."""
+    import asyncio
+
+    async def fetch_detail(course_id: int, number: int):
+        return await asyncio.to_thread(
+            client.threads.get_by_number, course_id, number)
+    return fetch_detail
+
+
+def build_tree_enriched_draft_fn(*, base, fetch_detail):
+    """Wrap a draft fn so the draft's ``original_content`` is the deterministic,
+    indented comment tree (with the targeted comment marked) instead of the
+    agent's flat prose. Falls back to the agent's text on any fetch/parse error."""
+    from ed_bot.cockpit.thread_tree import build_comment_tree, render_tree
+
+    async def draft_fn(*, number: int, cwd: str, course_id: int):
+        payload = await base(number=number, cwd=cwd, course_id=course_id)
+        try:
+            detail = await fetch_detail(course_id, number)
+            op = build_comment_tree(detail)
+            tree_text = render_tree(
+                op, target_comment_id=payload.target_comment_id)
+            payload = payload.model_copy(update={"original_content": tree_text})
+        except Exception:  # noqa: BLE001 - keep the draft if the tree render fails
+            pass
+        return payload
+    return draft_fn
+
+
 def resolve_seed_thread_id(client, course_id: int, number: int) -> int:
     """Resolve a course-local thread number to its global EdStem thread id."""
     return client.threads.get_by_number(course_id, number).id
@@ -144,11 +174,14 @@ def main() -> None:  # pragma: no cover - thin live wiring
     post_fn = build_post_fn(client=client)
     is_answered_fn = build_is_answered_fn(client=client)
 
-    # Draft cache: reuse a saved draft while the thread is unchanged; persist
-    # edits so curated wording survives a restart.
+    # Draft pipeline: agent draft -> enrich original_content with the real,
+    # indented comment tree -> cache (reuse while the thread is unchanged).
     cache_dir = bot_dir / "cockpit-drafts"
+    inner_draft = build_tree_enriched_draft_fn(
+        base=build_draft_fn(cwd=cwd),
+        fetch_detail=build_fetch_detail(client=client))
     draft_fn = build_cached_draft_fn(
-        inner=build_draft_fn(cwd=cwd),
+        inner=inner_draft,
         fetch_meta=build_fetch_meta(client=client), cache_dir=cache_dir)
 
     def persist_fn(number: int, payload) -> None:

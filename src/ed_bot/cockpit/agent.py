@@ -187,6 +187,54 @@ async def draft_thread(
     return payload.model_copy(update={"guardrail_warnings": warnings})
 
 
+_REPLY_PROMPT = """A forum thread needs a reply. Fetch EdStem thread #{number} in \
+course {course_id} with ed-api, search the knowledge base, and load the project \
+guardrail. Then draft {target_instruction}. Return only the final answer in the \
+structured shape. In `original_content`, put the FULL thread (the post and every \
+comment/reply, in order, labeled by author). Set `thread_id` to the thread's \
+GLOBAL id (the `id` from ed-api), not the course-local number. If you cannot \
+fetch the thread or there is nothing useful to add, return a body beginning with \
+"NEEDS HUMAN".""".strip()
+
+_REPLY_TO_OP = ("a top-level answer to the original question (the student's "
+                "opening post)")
+_REPLY_TO_COMMENT = (
+    "a reply that specifically addresses comment id {target} -- respond to THAT "
+    "comment's question directly, using the rest of the thread for context, not "
+    "a general answer to the whole thread")
+
+
+async def draft_reply(
+    *,
+    number: int,
+    cwd: str,
+    course_id: int,
+    target_comment_id: "int | None" = None,
+    sdk_query: SdkQuery = default_sdk_query,
+    guardrail_scan: GuardrailScan = _default_scan,
+) -> DraftPayload:
+    """Draft a reply to a specific comment (or a top-level answer to the OP when
+    ``target_comment_id`` is None). The routing (post_kind + target_comment_id)
+    is set deterministically here, never trusted from the model."""
+    if target_comment_id is None:
+        target_instruction = _REPLY_TO_OP
+    else:
+        target_instruction = _REPLY_TO_COMMENT.format(target=target_comment_id)
+    prompt = _REPLY_PROMPT.format(number=number, course_id=course_id,
+                                  target_instruction=target_instruction)
+    prompt += _humanizer_directive()
+    schema = DraftPayload.model_json_schema()
+    raw = await sdk_query(prompt=prompt, schema=schema, cwd=cwd)
+    payload = DraftPayload.model_validate(raw)
+    warnings = guardrail_scan(payload.body, _guardrail_path_for(payload.project))
+    post_kind = "answer" if target_comment_id is None else "reply"
+    return payload.model_copy(update={
+        "post_kind": post_kind,
+        "target_comment_id": target_comment_id,
+        "guardrail_warnings": warnings,
+    })
+
+
 from claude_agent_sdk import AssistantMessage, TextBlock
 
 SdkText = Callable[..., Awaitable[str]]
