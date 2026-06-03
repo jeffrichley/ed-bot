@@ -62,6 +62,19 @@ def build_rescan_fn():
     return rescan
 
 
+def build_fetch_meta(*, client):
+    """Cheap staleness probe for the draft cache: a thread's reply_count +
+    is_answered, fetched off the event loop."""
+    import asyncio
+
+    async def fetch_meta(course_id: int, number: int) -> dict:
+        detail = await asyncio.to_thread(
+            client.threads.get_by_number, course_id, number)
+        return {"reply_count": detail.reply_count,
+                "is_answered": detail.is_answered}
+    return fetch_meta
+
+
 def resolve_seed_thread_id(client, course_id: int, number: int) -> int:
     """Resolve a course-local thread number to its global EdStem thread id."""
     return client.threads.get_by_number(course_id, number).id
@@ -114,9 +127,10 @@ def main() -> None:  # pragma: no cover - thin live wiring
                         help="don't poll the live forum (seed-only)")
     args = parser.parse_args()
 
+    from ed_bot.cockpit.draft_cache import build_cached_draft_fn, update_payload
+
     cwd = str(ed_working_dir())
     course_id = resolve_course_id()
-    draft_fn = build_draft_fn(cwd=cwd)
     chat_fn = build_chat_fn(cwd=cwd)
     chat_edit_fn = build_chat_edit_fn(cwd=cwd)
     rescan_fn = build_rescan_fn()
@@ -130,6 +144,16 @@ def main() -> None:  # pragma: no cover - thin live wiring
     post_fn = build_post_fn(client=client)
     is_answered_fn = build_is_answered_fn(client=client)
 
+    # Draft cache: reuse a saved draft while the thread is unchanged; persist
+    # edits so curated wording survives a restart.
+    cache_dir = bot_dir / "cockpit-drafts"
+    draft_fn = build_cached_draft_fn(
+        inner=build_draft_fn(cwd=cwd),
+        fetch_meta=build_fetch_meta(client=client), cache_dir=cache_dir)
+
+    def persist_fn(number: int, payload) -> None:
+        update_payload(cache_dir, course_id, number, payload)
+
     fetch_events = None
     if not args.no_watch:
         store = WatchAlertStore(bot_dir / "state" / "tracker.db")
@@ -140,6 +164,7 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      post_fn=post_fn, is_answered_fn=is_answered_fn,
                      fetch_events=fetch_events, chat_fn=chat_fn,
                      chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
+                     persist_fn=persist_fn,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)
