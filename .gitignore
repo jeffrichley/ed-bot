@@ -7,3 +7,7 @@ site/
 
 # Brainstorming visual-companion sessions
 .superpowers/
+
+# Bot verification outputs (local-only; may contain student-facing content)
+_verify_*.out
+*.verify.out
