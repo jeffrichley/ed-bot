@@ -45,6 +45,26 @@ async def test_empty_queue_clears_panes_when_active_thread_gone():
         assert app.query_one("#comment", TextArea).text == ""
 
 
+async def test_reject_acts_on_highlighted_row_without_active_thread():
+    """Clicking a thread that has no draft yet leaves _active_thread unset, but
+    reject (a queue-level action) must still work on the highlighted row."""
+    from ed_bot.cockpit.widgets import QueueRail
+    app = await _make_app()
+    async with app.run_test() as pilot:
+        # Seed one item directly in the loop and render the rail, no draft.
+        app.loop._items[207] = _item(207)
+        app.query_one(QueueRail).show([_item(207)])
+        await pilot.pause()
+        app._active_thread = None          # the bug condition: nothing opened
+        app.query_one(QueueRail).highlighted = 0
+        app.action_act("reject")
+        for _ in range(20):
+            await pilot.pause()
+            if app.loop.queue_item(207).status == "dismissed":
+                break
+        assert app.loop.queue_item(207).status == "dismissed"
+
+
 async def test_active_thread_still_queued_leaves_panes_alone():
     app = await _make_app()
     async with app.run_test() as pilot:

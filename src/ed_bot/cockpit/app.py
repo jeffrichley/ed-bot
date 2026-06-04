@@ -298,7 +298,13 @@ class CockpitApp(App):
         option_id = event.option_id
         if option_id is None or option_id == "__empty__":
             return
-        self.inject_command(UserCommand(intent="open", thread=int(option_id)))
+        number = int(option_id)
+        # Mark the clicked row active right away so the draft-level hotkeys
+        # (a/e) have a thread to act on even before its draft finishes loading;
+        # the open command fills the panes once a draft exists.
+        self._active_thread = number
+        self._active_target = None
+        self.inject_command(UserCommand(intent="open", thread=number))
         # Keep focus on the queue rail (action mode) so the a/e/r/f/s/o hotkeys
         # act on the thread you just opened. Press Esc to jump to the chat box.
 
@@ -350,6 +356,18 @@ class CockpitApp(App):
         self.query_one(QueueRail).focus()
 
     def action_act(self, intent: str) -> None:
+        # reject / flag / skip are queue-level: they act on the HIGHLIGHTED row
+        # (the same resolver 'o' uses), so they work the moment you click a
+        # thread — even while it is still drafting and has no draft yet.
+        if intent in ("reject", "flag", "skip"):
+            number = self._target_thread_number()
+            if number is None:
+                self.query_one(StatusBar).show("no thread selected")
+                return
+            self.inject_command(UserCommand(intent=intent, thread=number,
+                                            target=None))
+            return
+        # approve / edit act on the OPENED draft shown in the panes.
         if self._active_thread is None:
             self.query_one(StatusBar).show("no active thread")
             return
