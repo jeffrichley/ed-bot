@@ -220,6 +220,15 @@ def main() -> None:  # pragma: no cover - thin live wiring
         inner=build_reply_fn(cwd=cwd),
         fetch_meta=build_fetch_meta(client=client), cache_dir=cache_dir)
 
+    # A distinct, lower completion chime when a draft finishes (separate from the
+    # watcher's new-thread ping). Best-effort: silent if no draft_ready sound is
+    # configured or no speaker is available.
+    from ed_bot.watch.sound import play as play_sound
+
+    def on_draft_ready(number: int) -> None:
+        if "draft_ready" in watch_cfg.sounds:
+            play_sound("draft_ready", watch_cfg.sounds)  # type: ignore[arg-type]
+
     fetch_events = None
     if not args.no_watch:
         store = WatchAlertStore(bot_dir / "state" / "tracker.db")
@@ -231,7 +240,7 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      fetch_events=fetch_events, chat_fn=chat_fn,
                      chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
                      persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
-                     draft_reply_fn=draft_reply_fn,
+                     draft_reply_fn=draft_reply_fn, on_draft_ready=on_draft_ready,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)
