@@ -220,6 +220,37 @@ def main() -> None:  # pragma: no cover - thin live wiring
         inner=build_reply_fn(cwd=cwd),
         fetch_meta=build_fetch_meta(client=client), cache_dir=cache_dir)
 
+    # A distinct, lower completion chime when a draft finishes (separate from the
+    # watcher's new-thread ping). Best-effort: silent if no draft_ready sound is
+    # configured or no speaker is available.
+    from ed_bot.watch.sound import play as play_sound
+
+    def on_draft_ready(number: int) -> None:
+        if "draft_ready" in watch_cfg.sounds:
+            play_sound("draft_ready", watch_cfg.sounds)  # type: ignore[arg-type]
+
+    # Append-only audit trail of every post attempt: what was sent, where (thread
+    # + target comment + EdStem URL), when, and the outcome. One JSON object per
+    # line at ~/.ed-bot/state/posts.jsonl. Best-effort — never breaks a post.
+    import json
+    import datetime
+    posts_log_path = bot_dir / "state" / "posts.jsonl"
+
+    def post_log_fn(entry: dict) -> None:
+        try:
+            tid = entry.get("thread_id")
+            rec = {
+                "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                **entry,
+                "url": (f"https://edstem.org/us/courses/{course_id}/discussion/{tid}"
+                        if tid else None),
+            }
+            posts_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(posts_log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001 - auditing must never break posting
+            pass
+
     fetch_events = None
     if not args.no_watch:
         store = WatchAlertStore(bot_dir / "state" / "tracker.db")
@@ -231,7 +262,8 @@ def main() -> None:  # pragma: no cover - thin live wiring
                      fetch_events=fetch_events, chat_fn=chat_fn,
                      chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
                      persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
-                     draft_reply_fn=draft_reply_fn,
+                     draft_reply_fn=draft_reply_fn, on_draft_ready=on_draft_ready,
+                     post_log_fn=post_log_fn,
                      watch_interval=resolve_watch_interval(watch_cfg))
 
     seed_numbers = parse_seed_numbers(args.seed)
