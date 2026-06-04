@@ -7,6 +7,7 @@ they can be unit-tested with fakes; __main__ constructs the real ones.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Awaitable, Callable
 
 from ed_bot.cockpit.models import ActionResult, WatcherEvent
@@ -24,12 +25,30 @@ def build_is_answered_fn(*, client: Any) -> Callable[[int], Awaitable[bool]]:
 PostFn = Callable[..., Awaitable[ActionResult]]
 
 _ACCEPT_WARN = "posted; could not accept (post-type thread). Resolve by hand."
+_ACCEPT_UNCONFIRMED = (
+    "posted, but EdStem did not confirm the thread was marked answered "
+    "— please accept it by hand.")
 
 
-def build_post_fn(*, client: Any) -> PostFn:
-    """Async post backend. Top-level answers post as --answer then try to
-    accept (accept failure is a non-fatal warning); follow-ups post a nested
-    reply and are never accepted."""
+def build_post_fn(*, client: Any, verify_attempts: int = 3,
+                  verify_delay: float = 1.0,
+                  sleep: "Callable[[float], None]" = time.sleep) -> PostFn:
+    """Async post backend. Top-level answers post as --answer then accept;
+    follow-ups post a nested reply and are never accepted.
+
+    EdStem can return 200 to an accept call yet silently NOT mark the thread
+    answered when the answer was just created (the cockpit posts and accepts
+    back-to-back, unlike a human). So after accepting we re-fetch the thread to
+    confirm it actually flipped to answered, retrying the accept a few times. If
+    it still can't be confirmed we report accepted=False with an actionable
+    warning instead of a false success."""
+    def _is_answered(thread_id: int) -> "bool | None":
+        """True/False from the live thread, or None if it can't be checked."""
+        try:
+            return bool(client.threads.get(thread_id).is_answered)
+        except Exception:  # noqa: BLE001 - can't verify; caller trusts the 2xx
+            return None
+
     def _post_answer(thread_id: int, body: str) -> ActionResult:
         comment = client.comments.post(thread_id, body, is_answer=True)
         try:
@@ -37,8 +56,23 @@ def build_post_fn(*, client: Any) -> PostFn:
         except Exception:  # noqa: BLE001 - post-type threads can't be accepted
             return ActionResult(thread_id=thread_id, ok=True, posted_id=comment.id,
                                 accepted=False, message=_ACCEPT_WARN)
+        for attempt in range(verify_attempts):
+            answered = _is_answered(thread_id)
+            if answered is None:
+                # Unverifiable: trust the 2xx rather than hammer accept.
+                return ActionResult(thread_id=thread_id, ok=True,
+                                    posted_id=comment.id, accepted=True)
+            if answered:
+                return ActionResult(thread_id=thread_id, ok=True,
+                                    posted_id=comment.id, accepted=True)
+            if attempt < verify_attempts - 1:
+                sleep(verify_delay)
+                try:
+                    client.comments.accept(comment.id)
+                except Exception:  # noqa: BLE001 - give up cleanly on a hard error
+                    break
         return ActionResult(thread_id=thread_id, ok=True, posted_id=comment.id,
-                            accepted=True)
+                            accepted=False, message=_ACCEPT_UNCONFIRMED)
 
     def _post_reply(thread_id: int, body: str, target_comment_id: int) -> ActionResult:
         comment = client.comments.reply(target_comment_id, body)
