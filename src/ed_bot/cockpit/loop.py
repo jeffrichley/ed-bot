@@ -29,6 +29,9 @@ RescanFn = Callable[[str, Optional[str]], list[str]]
 PersistFn = Callable[[int, DraftPayload], None]
 # Fetch a thread's comment tree (CommentNode) for the tree view.
 FetchTreeFn = Callable[[int, int], Awaitable[Any]]  # (course_id, number) -> CommentNode
+# Fired (with the thread number) when one or more drafts become ready, so the
+# UI can play a completion chime. Best-effort: a missing/raising hook is ignored.
+OnDraftReady = Callable[[int], None]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -43,6 +46,7 @@ class CockpitLoop:
                  persist_fn: "PersistFn | None" = None,
                  fetch_tree_fn: "FetchTreeFn | None" = None,
                  draft_reply_fn: "DraftReplyFn | None" = None,
+                 on_draft_ready: "OnDraftReady | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -56,6 +60,7 @@ class CockpitLoop:
         self._persist_fn = persist_fn
         self._fetch_tree_fn = fetch_tree_fn
         self._draft_reply_fn = draft_reply_fn
+        self._on_draft_ready = on_draft_ready
         self._items: dict[int, QueueItem] = {}
         # Drafts keyed by (thread number, target comment id). target None is the
         # top-level answer to the original post; a comment id is a reply to it.
@@ -100,6 +105,7 @@ class CockpitLoop:
             return None
         payload = self._reconcile_thread_id(number, payload)
         self._drafts[(number, target)] = payload
+        self._signal_draft_ready(number)
         return payload
 
     def update_draft_body(self, number: int, new_body: str,
@@ -159,6 +165,16 @@ class CockpitLoop:
         else:
             await self._autodraft_single(number)
 
+    def _signal_draft_ready(self, number: int) -> None:
+        """Notify the UI that a draft for ``number`` is ready (completion chime).
+        Best-effort: never let a sound hook break the draft pipeline."""
+        if self._on_draft_ready is None:
+            return
+        try:
+            self._on_draft_ready(number)
+        except Exception:  # noqa: BLE001 - a missing speaker must not crash drafting
+            pass
+
     def _reconcile_thread_id(self, number: int,
                              payload: DraftPayload) -> DraftPayload:
         # The watcher/seed event carries the authoritative GLOBAL thread id; the
@@ -197,6 +213,8 @@ class CockpitLoop:
             update={"draft_state": "ready" if drafted else "failed"})
         self._emit(StatusUpdate(line=f"#{number}: {drafted} draft(s) ready"))
         self._push_queue()
+        if drafted:
+            self._signal_draft_ready(number)
 
     async def _autodraft_single(self, number: int) -> None:
         self._emit(StatusUpdate(line=f"drafting #{number}..."))
@@ -217,6 +235,7 @@ class CockpitLoop:
             update={"draft_state": "ready"})
         self._emit(StatusUpdate(line=f"#{number} ready"))
         self._push_queue()
+        self._signal_draft_ready(number)
 
     async def _load_tree(self, number: int) -> None:
         """Fetch and store the thread's comment tree (best effort)."""
@@ -345,6 +364,7 @@ class CockpitLoop:
                        target: Optional[int] = None) -> ActionResult:
         payload = self._drafts.get((number, target))
         if payload is None:
+            self._emit(StatusUpdate(line=f"#{number}: no draft to post"))
             return ActionResult(thread_id=0, ok=False, message="no draft to post")
         # Never post a placeholder: an empty body, or a "NEEDS HUMAN" flag the
         # agent returns when it is unsure or the thread is already handled.
@@ -368,14 +388,28 @@ class CockpitLoop:
             thread_id=payload.thread_id, number=number, body=payload.body,
             post_kind=payload.post_kind, target_comment_id=payload.target_comment_id,
         )
+        if res.ok and res.posted_id is None:
+            # ok with no comment id means the post backend reported success but
+            # nothing actually landed. Never silently drop the draft on that — keep
+            # the row so the human can retry / verify rather than lose the answer.
+            self._emit(StatusUpdate(
+                line=f"#{number}: post reported success but returned no comment id "
+                     f"— left in the queue, verify on EdStem"))
+            return res
         if res.ok:
-            # The draft is posted: drop it. When a thread has no drafts left to
-            # post, mark it posted so it leaves the rail (a single-question
-            # thread vanishes on post; a multi-question one stays until done).
+            # The draft is verifiably posted (a real comment id came back): drop
+            # it. When a thread has no drafts left to post, mark it posted so it
+            # leaves the rail (a single-question thread vanishes on post; a
+            # multi-question one stays until done).
             self._drafts.pop((number, target), None)
             item = self._items.get(number)
             if item is not None and not self.targets_with_drafts(number):
                 self._items[number] = item.model_copy(update={"status": "posted"})
-            self._emit(StatusUpdate(line=f"posted #{number}"))
+            warn = f" ({res.message})" if res.message else ""
+            self._emit(StatusUpdate(line=f"posted #{number}{warn}"))
             self._push_queue()
+        else:
+            # A real post failure (e.g. an API exception) used to be silent: the
+            # row stayed but nothing told the user why. Surface it.
+            self._emit(StatusUpdate(line=f"#{number}: NOT posted — {res.message}"))
         return res

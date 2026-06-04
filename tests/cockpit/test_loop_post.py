@@ -3,6 +3,7 @@ import pytest
 
 from ed_bot.cockpit.models import (
     WatcherEvent, UserCommand, DraftPayload, ActionResult, QueueItem, QueueUpdate,
+    StatusUpdate,
 )
 from ed_bot.cockpit.loop import CockpitLoop
 
@@ -66,6 +67,78 @@ async def test_multidraft_thread_stays_until_all_posted():
     await loop.handle(UserCommand(intent="approve", thread=207, target=20))
     after_second = [e for e in emitted if isinstance(e, QueueUpdate)][-1]
     assert all(i.number != 207 for i in after_second.items)  # now done -> gone
+
+
+@pytest.mark.anyio
+async def test_ok_without_posted_id_keeps_thread():
+    """A backend reporting ok=True but returning no comment id means nothing
+    actually landed: the draft must be kept and the thread must stay in the rail
+    (the 'disappeared but didn't post' failure mode)."""
+    emitted = []
+
+    async def post_no_id(*, thread_id, number, body, post_kind, target_comment_id):
+        return ActionResult(thread_id=thread_id, ok=True, posted_id=None)
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=emitted.append, post_fn=post_no_id,
+                       is_answered_fn=_not_answered)
+    await loop.handle(_event(207))
+    res = await loop.handle(UserCommand(intent="approve", thread=207))
+    assert res.ok is True and res.posted_id is None
+    assert loop.draft(207) is not None                       # draft kept
+    assert loop.queue_item(207).status != "posted"
+    last = [e for e in emitted if isinstance(e, QueueUpdate)][-1]
+    assert any(i.number == 207 for i in last.items)          # still in the rail
+
+
+@pytest.mark.anyio
+async def test_failed_post_surfaces_status_and_keeps_thread():
+    """A real post failure used to be silent. It must now surface a status line
+    and leave the thread in the rail."""
+    emitted = []
+
+    async def post_fail(*, thread_id, number, body, post_kind, target_comment_id):
+        return ActionResult(thread_id=thread_id, ok=False, message="boom")
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=emitted.append, post_fn=post_fail,
+                       is_answered_fn=_not_answered)
+    await loop.handle(_event(207))
+    res = await loop.handle(UserCommand(intent="approve", thread=207))
+    assert res.ok is False
+    lines = [e.line for e in emitted if isinstance(e, StatusUpdate)]
+    assert any("NOT posted" in ln and "boom" in ln for ln in lines)
+    assert loop.queue_item(207).status != "posted"
+
+
+@pytest.mark.anyio
+async def test_on_draft_ready_fires_when_draft_completes():
+    fired = []
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: None, on_draft_ready=fired.append)
+    await loop.handle(_event(207))
+    assert fired == [207]
+
+
+@pytest.mark.anyio
+async def test_on_draft_ready_fires_on_demand_draft_one():
+    fired = []
+
+    async def reply_fn(*, number, cwd, course_id, target_comment_id):
+        return DraftPayload(thread_id=8100207, number=number, question="q",
+                            body="r", post_kind="reply",
+                            target_comment_id=target_comment_id)
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=None,
+                       emit=lambda m: None, draft_reply_fn=reply_fn,
+                       on_draft_ready=fired.append)
+    loop._items[207] = QueueItem(
+        thread_id=8100207, number=207, title="t",
+        category="Project 1 | Martingale", kind="new_thread",
+        draft_state="ready", status="needs_attention")
+    out = await loop.draft_one(207, 55)
+    assert out is not None
+    assert fired == [207]
 
 
 @pytest.mark.anyio

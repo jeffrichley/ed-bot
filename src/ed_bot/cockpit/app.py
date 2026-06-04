@@ -46,7 +46,7 @@ class CockpitApp(App):
                  post_fn=None, is_answered_fn=None, fetch_events=None,
                  chat_fn=None, chat_edit_fn=None, rescan_fn=None,
                  persist_fn=None, fetch_tree_fn=None, draft_reply_fn=None,
-                 watch_interval: float = 120.0) -> None:
+                 on_draft_ready=None, watch_interval: float = 120.0) -> None:
         super().__init__()
         self._fetch_events = fetch_events
         self._course_id = course_id
@@ -65,7 +65,7 @@ class CockpitApp(App):
             emit=self._emit, post_fn=post_fn, is_answered_fn=is_answered_fn,
             chat_fn=chat_fn, chat_edit_fn=chat_edit_fn, rescan_fn=rescan_fn,
             persist_fn=persist_fn, fetch_tree_fn=fetch_tree_fn,
-            draft_reply_fn=draft_reply_fn,
+            draft_reply_fn=draft_reply_fn, on_draft_ready=on_draft_ready,
         )
 
     def compose(self) -> ComposeResult:
@@ -199,6 +199,38 @@ class CockpitApp(App):
         box.text = text
         box.border_title = title
 
+    def _clear_panes(self) -> None:
+        """Reset the tree, comment, and draft panes to their empty state and
+        forget the active thread/target. Used when the open thread leaves the
+        queue (posted or rejected) and there is nothing to advance to."""
+        tree = self.query_one("#tree", Tree)
+        tree.clear()
+        tree.root.set_label("thread")
+        self._tree_nodes = {}
+        comment = self.query_one("#comment", TextArea)
+        comment.text = ""
+        comment.border_title = "Comment"
+        draft = self.query_one("#draft", TextArea)
+        draft.text = ""
+        draft.border_subtitle = ""
+        draft.border_title = "Draft"
+        self._active_thread = None
+        self._active_target = None
+
+    def _reconcile_active_after_queue(self, items) -> None:
+        """When the open thread is gone from the rail (it was posted or
+        rejected), advance to the next queued thread, or clear the panes if the
+        queue is now empty. Leaves an in-progress edit untouched."""
+        if self._editing or self._active_thread is None:
+            return
+        if any(i.number == self._active_thread for i in items):
+            return  # the open thread is still queued — nothing to do
+        self._clear_panes()
+        if items:
+            # Open the next thread so the panes follow the queue instead of
+            # stranding the user on a blank view.
+            self.inject_command(UserCommand(intent="open", thread=items[0].number))
+
     def on_tree_node_highlighted(self, event) -> None:
         """Arrowing the tree selects that comment: shows its text and its draft."""
         if self._populating:
@@ -231,6 +263,7 @@ class CockpitApp(App):
                 banner.flash(f"ESCALATION #{top.number}: {top.title}")
             else:
                 banner.clear_alert()
+            self._reconcile_active_after_queue(payload.items)
         elif isinstance(payload, StatusUpdate):
             self.query_one(StatusBar).show(payload.line)
         elif isinstance(payload, ActionResult):
