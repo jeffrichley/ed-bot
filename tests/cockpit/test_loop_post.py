@@ -142,6 +142,45 @@ async def test_on_draft_ready_fires_on_demand_draft_one():
 
 
 @pytest.mark.anyio
+async def test_post_attempt_is_audit_logged_on_success():
+    logged = []
+
+    async def ok_post(*, thread_id, number, body, post_kind, target_comment_id):
+        return ActionResult(thread_id=thread_id, ok=True, posted_id=555,
+                            accepted=True)
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: None, post_fn=ok_post,
+                       is_answered_fn=_not_answered, post_log_fn=logged.append)
+    await loop.handle(_event(207))
+    await loop.handle(UserCommand(intent="approve", thread=207))
+    assert len(logged) == 1
+    e = logged[0]
+    assert e["number"] == 207
+    assert e["thread_id"] == 8100207        # the authoritative global id
+    assert e["post_kind"] == "answer" and e["is_answer"] is True
+    assert e["ok"] is True and e["posted_id"] == 555 and e["accepted"] is True
+    assert e["body"] == "b"
+
+
+@pytest.mark.anyio
+async def test_post_attempt_is_audit_logged_on_failure():
+    logged = []
+
+    async def post_fail(*, thread_id, number, body, post_kind, target_comment_id):
+        return ActionResult(thread_id=thread_id, ok=False, message="boom")
+
+    loop = CockpitLoop(cwd=".", course_id=98559, draft_fn=_draft,
+                       emit=lambda m: None, post_fn=post_fail,
+                       is_answered_fn=_not_answered, post_log_fn=logged.append)
+    await loop.handle(_event(207))
+    await loop.handle(UserCommand(intent="approve", thread=207))
+    assert len(logged) == 1
+    assert logged[0]["ok"] is False and logged[0]["message"] == "boom"
+    assert logged[0]["posted_id"] is None
+
+
+@pytest.mark.anyio
 async def test_approve_posts_and_marks_posted():
     posted = {}
 

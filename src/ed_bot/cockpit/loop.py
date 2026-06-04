@@ -32,6 +32,9 @@ FetchTreeFn = Callable[[int, int], Awaitable[Any]]  # (course_id, number) -> Com
 # Fired (with the thread number) when one or more drafts become ready, so the
 # UI can play a completion chime. Best-effort: a missing/raising hook is ignored.
 OnDraftReady = Callable[[int], None]
+# Append-only audit sink for every post ATTEMPT (success or failure): receives a
+# dict of what/where/when so posts can be reconstructed and verified afterward.
+PostLogFn = Callable[[dict], None]
 
 _SILENT_CATEGORIES = {"Social >", "Announcements", "Articles | Papers | Media"}
 
@@ -47,6 +50,7 @@ class CockpitLoop:
                  fetch_tree_fn: "FetchTreeFn | None" = None,
                  draft_reply_fn: "DraftReplyFn | None" = None,
                  on_draft_ready: "OnDraftReady | None" = None,
+                 post_log_fn: "PostLogFn | None" = None,
                  chat_history_limit: int = 20) -> None:
         self._cwd = cwd
         self._course_id = course_id
@@ -61,6 +65,7 @@ class CockpitLoop:
         self._fetch_tree_fn = fetch_tree_fn
         self._draft_reply_fn = draft_reply_fn
         self._on_draft_ready = on_draft_ready
+        self._post_log_fn = post_log_fn
         self._items: dict[int, QueueItem] = {}
         # Drafts keyed by (thread number, target comment id). target None is the
         # top-level answer to the original post; a comment id is a reply to it.
@@ -173,6 +178,33 @@ class CockpitLoop:
         try:
             self._on_draft_ready(number)
         except Exception:  # noqa: BLE001 - a missing speaker must not crash drafting
+            pass
+
+    def _log_post(self, number: int, payload: DraftPayload,
+                  res: ActionResult) -> None:
+        """Record one post attempt (what/where/when) to the audit sink. Captures
+        every outcome — success, ok-without-id, and failure — so a post can be
+        traced back to its thread, target comment, and body. Best-effort."""
+        if self._post_log_fn is None:
+            return
+        try:
+            self._post_log_fn({
+                "event": "post_attempt",
+                "course_id": self._course_id,
+                "number": number,
+                "thread_id": payload.thread_id,
+                "post_kind": payload.post_kind,
+                "target_comment_id": payload.target_comment_id,
+                "is_answer": payload.post_kind == "answer",
+                "ok": res.ok,
+                "posted_id": res.posted_id,
+                "accepted": res.accepted,
+                "message": res.message,
+                "confidence": payload.confidence,
+                "project": payload.project,
+                "body": payload.body,
+            })
+        except Exception:  # noqa: BLE001 - auditing must never break posting
             pass
 
     def _reconcile_thread_id(self, number: int,
@@ -388,6 +420,9 @@ class CockpitLoop:
             thread_id=payload.thread_id, number=number, body=payload.body,
             post_kind=payload.post_kind, target_comment_id=payload.target_comment_id,
         )
+        # Audit every attempt before acting on the result, so even a crash
+        # between here and the queue update leaves a record of what was sent.
+        self._log_post(number, payload, res)
         if res.ok and res.posted_id is None:
             # ok with no comment id means the post backend reported success but
             # nothing actually landed. Never silently drop the draft on that — keep
