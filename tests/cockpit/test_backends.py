@@ -62,15 +62,32 @@ class _FakeComments:
             raise RuntimeError("Invalid answer ancestor")
 
 
+class _FakePostThreads:
+    """Returns is_answered from a sequence, one per get() call (last repeats)."""
+    def __init__(self, answered_seq):
+        self._seq = list(answered_seq) or [True]
+        self.gets = 0
+
+    def get(self, thread_id):
+        i = min(self.gets, len(self._seq) - 1)
+        self.gets += 1
+        return _FakeThreadDetail(self._seq[i])
+
+
 class _PostClient:
-    def __init__(self, *, accept_raises=False):
+    def __init__(self, *, accept_raises=False, answered_seq=(True,)):
         self.comments = _FakeComments(accept_raises=accept_raises)
+        self.threads = _FakePostThreads(answered_seq)
+
+
+def _no_sleep(_):
+    return None
 
 
 async def test_post_answer_posts_and_accepts():
     from ed_bot.cockpit.backends import build_post_fn
     client = _PostClient()
-    post = build_post_fn(client=client)
+    post = build_post_fn(client=client, verify_delay=0, sleep=_no_sleep)
     res = await post(thread_id=500, number=10, body="Here's the answer.",
                      post_kind="answer", target_comment_id=None)
     assert res.ok is True
@@ -83,13 +100,57 @@ async def test_post_answer_posts_and_accepts():
 async def test_post_answer_warns_when_accept_fails():
     from ed_bot.cockpit.backends import build_post_fn
     client = _PostClient(accept_raises=True)
-    post = build_post_fn(client=client)
+    post = build_post_fn(client=client, verify_delay=0, sleep=_no_sleep)
     res = await post(thread_id=500, number=10, body="Answer for a post-type thread.",
                      post_kind="answer", target_comment_id=None)
     assert res.ok is True
     assert res.accepted is False
     assert res.posted_id == 4242
     assert "accept" in res.message.lower()
+
+
+async def test_post_answer_retries_accept_until_thread_confirms():
+    """Ed can 200 the accept yet not resolve the just-posted answer. We re-fetch
+    and re-accept until the thread actually flips to answered."""
+    from ed_bot.cockpit.backends import build_post_fn
+    client = _PostClient(answered_seq=[False, False, True])
+    post = build_post_fn(client=client, verify_delay=0, sleep=_no_sleep)
+    res = await post(thread_id=500, number=10, body="ans",
+                     post_kind="answer", target_comment_id=None)
+    assert res.accepted is True
+    assert len(client.comments.accepted) >= 2     # re-accepted after the no-op
+    assert client.threads.gets >= 2               # verified more than once
+
+
+async def test_post_answer_warns_when_resolution_never_confirms():
+    """If the thread never flips to answered, report accepted=False with an
+    actionable warning instead of a silent false success."""
+    from ed_bot.cockpit.backends import build_post_fn
+    client = _PostClient(answered_seq=[False])    # never resolves
+    post = build_post_fn(client=client, verify_delay=0, sleep=_no_sleep)
+    res = await post(thread_id=500, number=10, body="ans",
+                     post_kind="answer", target_comment_id=None)
+    assert res.ok is True
+    assert res.accepted is False
+    assert res.posted_id == 4242
+    assert "by hand" in res.message.lower()
+
+
+async def test_post_answer_trusts_accept_when_unverifiable():
+    """If the thread can't be re-fetched, trust the 2xx rather than spam accept."""
+    from ed_bot.cockpit.backends import build_post_fn
+
+    class _NoThreads:
+        def get(self, thread_id):
+            raise RuntimeError("cannot fetch")
+
+    client = _PostClient()
+    client.threads = _NoThreads()
+    post = build_post_fn(client=client, verify_delay=0, sleep=_no_sleep)
+    res = await post(thread_id=500, number=10, body="ans",
+                     post_kind="answer", target_comment_id=None)
+    assert res.accepted is True
+    assert client.comments.accepted == [4242]     # only the single accept
 
 
 async def test_post_reply_does_not_accept():
